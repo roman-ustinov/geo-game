@@ -312,6 +312,7 @@
   justify-content: center;
   gap: var(--button-gap);
   padding: 0 14px;
+  border: 1px solid transparent;
   border-radius: 8px;
   font-weight: 800;
   transition: transform 160ms ease, box-shadow 160ms ease;
@@ -319,27 +320,27 @@
 
 .action-row .primary-button,
 .action-row .secondary-button {
-  position: relative;
   width: 100%;
   min-width: 0;
-  padding: 0 18px;
+  padding: 0 14px;
 }
 
 .action-row .primary-button svg,
 .action-row .secondary-button svg {
-  position: absolute;
-  left: 10px;
+  flex: 0 0 auto;
 }
 
 .primary-button {
+  border-color: #d3562f;
   color: #fffaf0;
   background: #d3562f;
   box-shadow: 0 16px 30px rgba(211, 86, 47, 0.22);
 }
 
 .secondary-button {
+  border-color: rgba(21, 32, 43, 0.14);
   color: #15202b;
-  background: rgba(255, 255, 255, 0.76);
+  background: #eef1ee;
   box-shadow: 0 10px 24px rgba(30, 36, 44, 0.08);
 }
 
