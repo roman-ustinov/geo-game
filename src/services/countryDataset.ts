@@ -7,6 +7,7 @@ import world from 'world-atlas/countries-50m.json'
 import type { FeatureCollection, Geometry } from 'geojson'
 import type { Topology } from 'topojson-specification'
 import type { ContinentCode, CountryFeature, Language, LocalizedName, PlayableCountry } from '../types'
+import { CAPITAL_COORDINATES } from './capitalCoordinates'
 
 isoCountries.registerLocale(enLocale)
 isoCountries.registerLocale(skLocale)
@@ -37,30 +38,35 @@ export const BORDERS_GEO = mesh(topology, countriesObject as never, (a, b) => a 
 const geoByIso = new Map(WORLD_FEATURES.filter((country) => country.mapId).map((country) => [country.mapId, country]))
 
 const standardPlayable = Object.entries(countryDirectory)
-  .map(([alpha2, country]) => {
+  .flatMap(([alpha2, country]): PlayableCountry[] => {
     const iso = isoCountries.alpha2ToNumeric(alpha2)
     const geo = iso ? geoByIso.get(iso) : null
-    return {
+    if (!iso || !geo || !country.capital || country.continent === 'AN') return []
+    return [{
       id: alpha2.toLowerCase(),
       iso,
       name: geo?.properties?.name ?? country.name,
-      continent: country.continent,
+      continent: country.continent as ContinentCode,
       capital: country.capital,
+      capitalPoint: iso ? CAPITAL_COORDINATES[iso] : undefined,
       geo,
-    }
+    }]
   })
-  .filter((country): country is PlayableCountry => Boolean(country.iso && country.geo && country.capital && country.continent !== 'AN'))
 
 const specialPlayable = Object.entries(SPECIAL_COUNTRIES)
-  .map(([iso, country]) => ({
-    id: iso.toLowerCase(),
-    iso,
-    name: country.name.en,
-    continent: country.continent,
-    capital: country.capital,
-    geo: geoByIso.get(iso),
-  }))
-  .filter((country): country is PlayableCountry => Boolean(country.geo))
+  .flatMap(([iso, country]): PlayableCountry[] => {
+    const geo = geoByIso.get(iso)
+    if (!geo) return []
+    return [{
+      id: iso.toLowerCase(),
+      iso,
+      name: country.name.en,
+      continent: country.continent,
+      capital: country.capital,
+      capitalPoint: CAPITAL_COORDINATES[iso],
+      geo,
+    }]
+  })
 
 export const PLAYABLE_COUNTRIES = [...standardPlayable, ...specialPlayable].sort((a, b) => a.name.localeCompare(b.name))
 

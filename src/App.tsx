@@ -6,11 +6,13 @@ import {
   Crosshair,
   LogOut,
   MapPinned,
+  Minus,
   Monitor,
   Moon,
   Mountain,
   Pause,
   Play,
+  Plus,
   RotateCcw,
   Settings,
   Settings2,
@@ -71,6 +73,7 @@ type AudioPlayer = (type: AudioCue) => void
 type RoundResult = { type: Exclude<AudioCue, 'start'>; correctAnswer: string }
 type CssVars = CSSProperties & Record<`--${string}`, string | number>
 const CONTINENTS: ContinentCode[] = ['EU', 'AS', 'AF', 'NA', 'SA', 'OC']
+const MAP_ZOOM_STEPS = [0, 0.4, 0.7, 1, 1.25, 1.5, 1.75, 2]
 
 type GameModeMeta = Record<GameMode, {
   icon: LucideIcon
@@ -333,6 +336,7 @@ function App() {
   const [score, setScore] = useState(0)
   const [streak, setStreak] = useState(0)
   const [bestStreak, setBestStreak] = useState(0)
+  const [mapZoom, setMapZoom] = useState(1)
   const [timeLeft, setTimeLeft] = useState(settings.secondsPerRound)
   const [result, setResult] = useState<RoundResult | null>(null)
   const [selectedAnswerId, setSelectedAnswerId] = useState<string | null>(null)
@@ -382,6 +386,7 @@ function App() {
   const modeMeta = GAME_MODE_META[activeGameMode]
   const targetName = target ? (isLearning && target.mode === 'countries' ? getCountryDisplayName(target.iso, language) : getTargetDisplayName(target, language)) : null
   const learningCapital = isLearning && target?.mode === 'countries' ? getCapitalDisplayName(target.capital, language) : null
+  const capitalPoint = target?.mode === 'countries' && target.capitalPoint ? PROJECTION(target.capitalPoint) : null
   const answerOptions = useMemo(() => getAnswerOptions(activeGameMode, language), [activeGameMode, language])
   const progress = target ? ((roundIndex + (result || isLearning ? 1 : 0)) / currentRoundLimit) * 100 : 0
   const timerRatio = isLearning ? progress / 100 : Math.max(0, timeLeft / secondsPerRound)
@@ -389,7 +394,7 @@ function App() {
   const themeIcon = themeMode === 'light' ? <Sun size={20} /> : themeMode === 'dark' ? <Moon size={20} /> : <Monitor size={20} />
   const themeLabel = themeMode === 'light' ? t.lightTheme : themeMode === 'dark' ? t.darkTheme : t.autoTheme
 
-  const mapViewBox = useMemo(() => {
+  const baseMapViewBox = useMemo(() => {
     // Keep the setup map global, then zoom only during country rounds so tiny targets stay playable.
     if (!target || target.mode !== 'countries' || phase === 'setup' || phase === 'finished') {
       return `0 0 ${WIDTH} ${HEIGHT}`
@@ -399,14 +404,32 @@ function App() {
     const countryWidth = maxX - minX
     const countryHeight = maxY - minY
     const maxCountrySize = Math.max(countryWidth, countryHeight)
-    const viewWidth = maxCountrySize < 22 ? 360 : maxCountrySize < 55 ? 520 : maxCountrySize < 120 ? 700 : 900
+    const viewWidth = isLearning
+      ? maxCountrySize < 22 ? 120 : maxCountrySize < 55 ? 180 : maxCountrySize < 120 ? 300 : 520
+      : maxCountrySize < 22 ? 360 : maxCountrySize < 55 ? 520 : maxCountrySize < 120 ? 700 : 900
     const viewHeight = viewWidth / 1.8
     const center = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 }
     const x = clamp(center.x - viewWidth / 2, 0, WIDTH - viewWidth)
     const y = clamp(center.y - viewHeight / 2, 0, HEIGHT - viewHeight)
 
     return `${x.toFixed(1)} ${y.toFixed(1)} ${viewWidth.toFixed(1)} ${viewHeight.toFixed(1)}`
-  }, [phase, target])
+  }, [isLearning, phase, target])
+  const mapViewBox = useMemo(() => {
+    if (mapZoom === 0) return `0 0 ${WIDTH} ${HEIGHT}`
+
+    const [x, y, width, height] = baseMapViewBox.split(' ').map(Number)
+    if (mapZoom < 1) {
+      const zoomedWidth = WIDTH - (WIDTH - width) * mapZoom
+      const zoomedHeight = HEIGHT - (HEIGHT - height) * mapZoom
+      const center = { x: x + width / 2, y: y + height / 2 }
+      return `${clamp(center.x - zoomedWidth / 2, 0, WIDTH - zoomedWidth).toFixed(1)} ${clamp(center.y - zoomedHeight / 2, 0, HEIGHT - zoomedHeight).toFixed(1)} ${zoomedWidth.toFixed(1)} ${zoomedHeight.toFixed(1)}`
+    }
+
+    const zoomedWidth = width / mapZoom
+    const zoomedHeight = height / mapZoom
+    return `${clamp(x + (width - zoomedWidth) / 2, 0, WIDTH - zoomedWidth).toFixed(1)} ${clamp(y + (height - zoomedHeight) / 2, 0, HEIGHT - zoomedHeight).toFixed(1)} ${zoomedWidth.toFixed(1)} ${zoomedHeight.toFixed(1)}`
+  }, [baseMapViewBox, mapZoom])
+  const capitalMarkerRadius = (Number(mapViewBox.split(' ')[2]) || WIDTH) / 260
 
   const resolveRound = useCallback((answerId: string | null, mode: RoundResolveMode = 'answer') => {
     if (!target || result || isLearning) return
@@ -543,6 +566,7 @@ function App() {
     const newDeck = isLearning
       ? buildRoundDeck(createCountryItems(learningCountries), learningCountries.length)
       : buildRoundDeck(createGameItems(configuredGameMode), roundLimit)
+    setMapZoom(1)
     setDeck(newDeck)
     setRoundIndex(0)
     setScore(0)
@@ -563,11 +587,23 @@ function App() {
     clearGameState()
   }
 
+  function zoomMap(direction: -1 | 1) {
+    setMapZoom((value) => {
+      const index = MAP_ZOOM_STEPS.findIndex((step) => step >= value)
+      return MAP_ZOOM_STEPS[clamp((index === -1 ? MAP_ZOOM_STEPS.length - 1 : index) + direction, 0, MAP_ZOOM_STEPS.length - 1)]
+    })
+  }
+
   function nextLearningCountry() {
+    if (phase !== 'playing') {
+      startGame()
+      return
+    }
     if (roundIndex + 1 >= currentRoundLimit) {
       setPhase('finished')
       return
     }
+    setMapZoom(1)
     setRoundIndex((value) => value + 1)
   }
 
@@ -692,6 +728,7 @@ function App() {
     return [
       ...base,
       target?.id === id && (result || (isLearning && phase !== 'setup')) && 'is-target',
+      target?.id === id && isLearning && phase !== 'setup' && 'is-learning-target',
       !isLearning && selectedAnswerId === id && 'is-selected',
       !isLearning && result?.type === 'correct' && target?.id === id && 'is-correct',
       !isLearning && result?.type !== 'correct' && target?.id === id && result && 'is-missed',
@@ -708,7 +745,7 @@ function App() {
   }
 
   return (
-    <main className={`game-shell ${flash ? `flash-${flash}` : ''}`}>
+    <main className={`game-shell ${flash ? `flash-${flash}` : ''} ${isLearning ? 'is-learning-mode' : ''}`}>
       <section className="topbar" aria-label="Prehľad hry">
         <div className="brand">
           <span className="brand-mark"><MapPinned size={21} /></span>
@@ -889,7 +926,7 @@ function App() {
           </div>
 
           {isLearning ? (
-            <button className="primary-button learning-next" type="button" disabled={phase !== 'playing'} onClick={nextLearningCountry}>
+            <button className="primary-button learning-next" type="button" disabled={phase === 'paused'} onClick={nextLearningCountry}>
               <ChevronRight size={18} />
               {roundIndex + 1 >= currentRoundLimit ? t.finishLearning : t.nextCountry}
             </button>
@@ -945,6 +982,13 @@ function App() {
 
             <path className="country-borders" d={PATH(BORDERS_GEO) ?? undefined} />
 
+            {isLearning && phase !== 'setup' && capitalPoint && (
+              <g className="capital-marker" aria-label={learningCapital ?? undefined}>
+                <circle cx={capitalPoint[0]} cy={capitalPoint[1]} r={capitalMarkerRadius} />
+                <circle cx={capitalPoint[0]} cy={capitalPoint[1]} r={capitalMarkerRadius * 2.35} />
+              </g>
+            )}
+
             {activeGameMode !== 'countries' && (
               <g key={`water-layer-${activeGameMode}`} className="water-layer" aria-label={t[modeMeta.promptKey]}>
                 {getWaterFeatures(activeGameMode).map((feature) => (
@@ -993,6 +1037,15 @@ function App() {
             )}
 
           </svg>
+
+          <div className="map-zoom-controls" aria-label="Zoom mapy">
+            <button type="button" onClick={() => zoomMap(-1)} aria-label="Oddialiť mapu" title="Oddialiť mapu">
+              <Minus size={18} />
+            </button>
+            <button type="button" onClick={() => zoomMap(1)} aria-label="Priblížiť mapu" title="Priblížiť mapu">
+              <Plus size={18} />
+            </button>
+          </div>
 
           {phase === 'paused' && (
             <div className="map-overlay">

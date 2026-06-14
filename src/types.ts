@@ -45,6 +45,7 @@ export type PlayableCountry = {
   name: string
   continent: ContinentCode
   capital: string
+  capitalPoint?: GeoPoint
   geo: CountryFeature
 }
 
