@@ -3,10 +3,10 @@ import isoCountries from 'i18n-iso-countries'
 import enLocale from 'i18n-iso-countries/langs/en.json'
 import skLocale from 'i18n-iso-countries/langs/sk.json'
 import { feature, mesh } from 'topojson-client'
-import world from 'world-atlas/countries-110m.json'
+import world from 'world-atlas/countries-50m.json'
 import type { FeatureCollection, Geometry } from 'geojson'
 import type { Topology } from 'topojson-specification'
-import type { CountryFeature, Language, LocalizedName, PlayableCountry } from '../types'
+import type { ContinentCode, CountryFeature, Language, LocalizedName, PlayableCountry } from '../types'
 
 isoCountries.registerLocale(enLocale)
 isoCountries.registerLocale(skLocale)
@@ -17,10 +17,10 @@ const SPECIAL_GEO_IDS: Record<string, string> = {
   Somaliland: 'XSOM',
 }
 
-const SPECIAL_COUNTRIES: Record<string, { name: LocalizedName; capital: string }> = {
-  XK: { name: { en: 'Kosovo', sk: 'Kosovo' }, capital: 'Pristina' },
-  XNC: { name: { en: 'Northern Cyprus', sk: 'Severný Cyprus' }, capital: 'North Nicosia' },
-  XSOM: { name: { en: 'Somaliland', sk: 'Somaliland' }, capital: 'Hargeisa' },
+const SPECIAL_COUNTRIES: Record<string, { name: LocalizedName; capital: string; continent: ContinentCode }> = {
+  XK: { name: { en: 'Kosovo', sk: 'Kosovo' }, capital: 'Pristina', continent: 'EU' },
+  XNC: { name: { en: 'Northern Cyprus', sk: 'Severný Cyprus' }, capital: 'North Nicosia', continent: 'EU' },
+  XSOM: { name: { en: 'Somaliland', sk: 'Somaliland' }, capital: 'Hargeisa', continent: 'AF' },
 }
 
 const topology = world as unknown as Topology
@@ -44,17 +44,19 @@ const standardPlayable = Object.entries(countryDirectory)
       id: alpha2.toLowerCase(),
       iso,
       name: geo?.properties?.name ?? country.name,
+      continent: country.continent,
       capital: country.capital,
       geo,
     }
   })
-  .filter((country): country is PlayableCountry => Boolean(country.iso && country.geo && country.capital))
+  .filter((country): country is PlayableCountry => Boolean(country.iso && country.geo && country.capital && country.continent !== 'AN'))
 
 const specialPlayable = Object.entries(SPECIAL_COUNTRIES)
   .map(([iso, country]) => ({
     id: iso.toLowerCase(),
     iso,
     name: country.name.en,
+    continent: country.continent,
     capital: country.capital,
     geo: geoByIso.get(iso),
   }))

@@ -12,6 +12,8 @@ export type GameMode =
   | 'deserts'
   | 'islands'
 
+export type ContinentCode = 'AF' | 'AS' | 'EU' | 'NA' | 'OC' | 'SA'
+
 export type TranslationKey = string
 
 export type LocalizedName = Record<Language, string>
@@ -41,6 +43,7 @@ export type PlayableCountry = {
   id: string
   iso: string
   name: string
+  continent: ContinentCode
   capital: string
   geo: CountryFeature
 }
@@ -129,4 +132,3 @@ export type ValidationError =
 export type SettingsErrors = Partial<Record<keyof GameSettings, ValidationError>>
 
 export type AuthErrors = Partial<Record<'email' | 'password' | 'form', string>>
-

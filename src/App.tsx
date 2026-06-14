@@ -1,6 +1,8 @@
 import { type CSSProperties, type ChangeEvent, type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { geoEqualEarth, geoPath } from 'd3-geo'
 import {
+  BookOpen,
+  ChevronRight,
   Crosshair,
   LogOut,
   MapPinned,
@@ -35,6 +37,7 @@ import { getWaterFeatureDisplayName, getWaterFeatures } from './services/waterFe
 import type {
   AnswerOption,
   AuthErrors,
+  ContinentCode,
   CountryFeature,
   EarnedAchievement,
   FeatureGameItem,
@@ -61,11 +64,13 @@ type Flash = 'start' | 'correct' | 'wrong' | 'timeout' | null
 type ActiveDialog = 'settings' | 'auth' | 'profile' | null
 type AuthMode = 'login' | 'register'
 type ThemeMode = 'auto' | 'light' | 'dark'
+type PlayMode = 'quiz' | 'learn'
 type RoundResolveMode = 'answer' | 'timeout'
 type AudioCue = 'start' | 'correct' | 'wrong' | 'timeout'
 type AudioPlayer = (type: AudioCue) => void
 type RoundResult = { type: Exclude<AudioCue, 'start'>; correctAnswer: string }
 type CssVars = CSSProperties & Record<`--${string}`, string | number>
+const CONTINENTS: ContinentCode[] = ['EU', 'AS', 'AF', 'NA', 'SA', 'OC']
 
 type GameModeMeta = Record<GameMode, {
   icon: LucideIcon
@@ -235,16 +240,20 @@ function buildRoundDeck<T extends { id: string }>(items: T[], limit: number): T[
 
 function createGameItems(gameMode: GameMode): GameItem[] {
   if (gameMode === 'countries') {
-    return PLAYABLE_COUNTRIES.map((country) => ({
-      ...country,
-      id: country.iso,
-      mode: 'countries',
-    }))
+    return createCountryItems(PLAYABLE_COUNTRIES)
   }
 
   return getWaterFeatures(gameMode).map((feature) => ({
     ...feature,
     mode: gameMode as FeatureGameItem['mode'],
+  }))
+}
+
+function createCountryItems(countries: readonly typeof PLAYABLE_COUNTRIES[number][]): GameItem[] {
+  return countries.map((country) => ({
+    ...country,
+    id: country.iso,
+    mode: 'countries',
   }))
 }
 
@@ -271,11 +280,10 @@ function getCorrectAnswerName(target: GameItem | null | undefined, language: Lan
 
 function getAnswerOptions(gameMode: GameMode, language: Language): AnswerOption[] {
   if (gameMode === 'countries') {
-    return WORLD_FEATURES
-      .filter((country) => country.mapId)
-      .map((country) => ({
-        id: country.mapId ?? '',
-        name: getCountryDisplayName(country.mapId, language),
+    return [...new Set(WORLD_FEATURES.map((country) => country.mapId).filter((id): id is string => Boolean(id)))]
+      .map((id) => ({
+        id,
+        name: getCountryDisplayName(id, language),
       }))
       .sort((a, b) => a.name.localeCompare(b.name))
   }
@@ -315,6 +323,8 @@ function projectFeaturePath(path: GeoPoint[]): string {
 function App() {
   const [language, setLanguage] = useState<Language>('sk')
   const [settings, setSettings] = usePersistentState<GameSettings>('capital-rush-settings', DEFAULT_SETTINGS)
+  const [playMode, setPlayMode] = usePersistentState<PlayMode>('capital-rush-play-mode', 'quiz')
+  const [learningContinent, setLearningContinent] = usePersistentState<ContinentCode>('capital-rush-learning-continent', 'EU')
   const [themeMode, setThemeMode] = usePersistentState<ThemeMode>('capital-rush-theme', 'auto')
   const [soundOn, setSoundOn] = useState(true)
   const [phase, setPhase] = useState<Phase>('setup')
@@ -354,6 +364,9 @@ function App() {
   const secondsPerRound = normalizedSettings.secondsPerRound
   const roundLimit = normalizedSettings.roundLimit
   const configuredGameMode = normalizedSettings.gameMode
+  const isLearning = playMode === 'learn'
+  const learningCountries = useMemo(() => PLAYABLE_COUNTRIES.filter((country) => country.continent === learningContinent), [learningContinent])
+  const currentRoundLimit = isLearning ? learningCountries.length : roundLimit
   const guestId = useMemo(() => getGuestId(), [])
   const ownerId = currentUser?.id ?? guestId
   const ownerResults = useMemo(() => {
@@ -367,11 +380,12 @@ function App() {
   const target = deck[roundIndex]
   const activeGameMode = target?.mode ?? configuredGameMode
   const modeMeta = GAME_MODE_META[activeGameMode]
-  const targetName = target ? getTargetDisplayName(target, language) : null
+  const targetName = target ? (isLearning && target.mode === 'countries' ? getCountryDisplayName(target.iso, language) : getTargetDisplayName(target, language)) : null
+  const learningCapital = isLearning && target?.mode === 'countries' ? getCapitalDisplayName(target.capital, language) : null
   const answerOptions = useMemo(() => getAnswerOptions(activeGameMode, language), [activeGameMode, language])
-  const progress = target ? ((roundIndex + (result ? 1 : 0)) / roundLimit) * 100 : 0
-  const timerRatio = Math.max(0, timeLeft / secondsPerRound)
-  const isPlaying = phase === 'playing' && !result
+  const progress = target ? ((roundIndex + (result || isLearning ? 1 : 0)) / currentRoundLimit) * 100 : 0
+  const timerRatio = isLearning ? progress / 100 : Math.max(0, timeLeft / secondsPerRound)
+  const isPlaying = phase === 'playing' && !result && !isLearning
   const themeIcon = themeMode === 'light' ? <Sun size={20} /> : themeMode === 'dark' ? <Moon size={20} /> : <Monitor size={20} />
   const themeLabel = themeMode === 'light' ? t.lightTheme : themeMode === 'dark' ? t.darkTheme : t.autoTheme
 
@@ -395,7 +409,7 @@ function App() {
   }, [phase, target])
 
   const resolveRound = useCallback((answerId: string | null, mode: RoundResolveMode = 'answer') => {
-    if (!target || result) return
+    if (!target || result || isLearning) return
 
     const correctAnswerId = target.id
     const isCorrect = answerId === correctAnswerId
@@ -438,7 +452,7 @@ function App() {
       setFlash(mode === 'timeout' ? 'timeout' : 'wrong')
       playerRef.current(mode === 'timeout' ? 'timeout' : 'wrong')
     }
-  }, [language, result, roundIndex, secondsPerRound, target])
+  }, [isLearning, language, result, roundIndex, secondsPerRound, target])
 
   const finishGame = useCallback((details: RoundDetail[]) => {
     if (!gameStartedAt || !details.length) return
@@ -526,7 +540,9 @@ function App() {
 
   function startGame() {
     // Build a fresh randomized deck for each run so every mode can reuse the same game loop.
-    const newDeck = buildRoundDeck(createGameItems(configuredGameMode), roundLimit)
+    const newDeck = isLearning
+      ? buildRoundDeck(createCountryItems(learningCountries), learningCountries.length)
+      : buildRoundDeck(createGameItems(configuredGameMode), roundLimit)
     setDeck(newDeck)
     setRoundIndex(0)
     setScore(0)
@@ -547,6 +563,14 @@ function App() {
     clearGameState()
   }
 
+  function nextLearningCountry() {
+    if (roundIndex + 1 >= currentRoundLimit) {
+      setPhase('finished')
+      return
+    }
+    setRoundIndex((value) => value + 1)
+  }
+
   function clearGameState(nextSecondsPerRound = secondsPerRound) {
     setPhase('setup')
     setDeck([])
@@ -563,12 +587,19 @@ function App() {
   }
 
   function changeGameMode(gameMode: GameMode) {
-    if (gameMode === configuredGameMode) return
+    if (playMode === 'quiz' && gameMode === configuredGameMode) return
+    setPlayMode('quiz')
     setSettings((value) => ({
       ...DEFAULT_SETTINGS,
       ...value,
       gameMode,
     }))
+    clearGameState(secondsPerRound)
+  }
+
+  function changeLearningContinent(continent: ContinentCode) {
+    setPlayMode('learn')
+    setLearningContinent(continent)
     clearGameState(secondsPerRound)
   }
 
@@ -660,11 +691,11 @@ function App() {
   function answerClass(id: string | null | undefined, base: string[]): string {
     return [
       ...base,
-      target?.id === id && result && 'is-target',
-      selectedAnswerId === id && 'is-selected',
-      result?.type === 'correct' && target?.id === id && 'is-correct',
-      result?.type !== 'correct' && target?.id === id && result && 'is-missed',
-      selectedAnswerId === id && selectedAnswerId !== target?.id && 'is-wrong',
+      target?.id === id && (result || (isLearning && phase !== 'setup')) && 'is-target',
+      !isLearning && selectedAnswerId === id && 'is-selected',
+      !isLearning && result?.type === 'correct' && target?.id === id && 'is-correct',
+      !isLearning && result?.type !== 'correct' && target?.id === id && result && 'is-missed',
+      !isLearning && selectedAnswerId === id && selectedAnswerId !== target?.id && 'is-wrong',
     ].filter(Boolean).join(' ')
   }
 
@@ -694,7 +725,7 @@ function App() {
           </div>
           <div>
             <span>{t.round}</span>
-            <strong>{phase === 'setup' ? 0 : Math.min(roundIndex + 1, roundLimit)}/{roundLimit}</strong>
+            <strong>{phase === 'setup' ? 0 : Math.min(roundIndex + 1, currentRoundLimit)}/{currentRoundLimit}</strong>
           </div>
           <div>
             <span>{t.streak}</span>
@@ -744,7 +775,7 @@ function App() {
         <div className="mode-choice-grid main-mode-grid" role="radiogroup" aria-label={t.gameMode}>
           {GAME_MODES.map((mode) => {
             const ChoiceIcon = GAME_MODE_META[mode].icon
-            const isActive = configuredGameMode === mode
+            const isActive = playMode === 'quiz' && configuredGameMode === mode
 
             return (
               <button
@@ -760,6 +791,16 @@ function App() {
               </button>
             )
           })}
+          <button
+            className={isLearning ? 'mode-choice-button active' : 'mode-choice-button'}
+            type="button"
+            role="radio"
+            aria-checked={isLearning}
+            onClick={() => changeLearningContinent(learningContinent)}
+          >
+            <BookOpen size={18} />
+            <span>{t.modeLearning}</span>
+          </button>
         </div>
       </section>
 
@@ -787,64 +828,91 @@ function App() {
           </button>
         </div>
 
-        <div className="settings-summary" aria-live="polite">
-          <span>{t.timePerRound}: <strong>{secondsPerRound}s</strong></span>
-          <span>{t.roundCount}: <strong>{roundLimit}</strong></span>
-        </div>
+        {isLearning ? (
+          <div className="continent-picker segmented" role="radiogroup" aria-label={t.chooseContinent}>
+            {CONTINENTS.map((continent) => (
+              <button
+                className={learningContinent === continent ? 'active' : ''}
+                type="button"
+                role="radio"
+                aria-checked={learningContinent === continent}
+                key={continent}
+                onClick={() => changeLearningContinent(continent)}
+              >
+                {t[`continent${continent}` as keyof TranslationDictionary]}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="settings-summary" aria-live="polite">
+            <span>{t.timePerRound}: <strong>{secondsPerRound}s</strong></span>
+            <span>{t.roundCount}: <strong>{roundLimit}</strong></span>
+          </div>
+        )}
       </section>
 
       <section className="play-area">
         <div className="prompt-panel">
           <div className="prompt-topline">
-            <span><Crosshair size={16} /> {t[modeMeta.promptKey]}</span>
+            <span><Crosshair size={16} /> {isLearning ? t.learningMode : t[modeMeta.promptKey]}</span>
             {phase !== 'setup' && (
               <span>{phase === 'finished' ? t.gameOver : phase === 'paused' ? t.pause : t.activeRound}</span>
             )}
           </div>
 
           <div className={targetName ? 'capital-card has-target' : 'capital-card is-empty'}>
-            <p>{t[modeMeta.targetLabelKey]}</p>
+            <p>{isLearning ? t.countryName : t[modeMeta.targetLabelKey]}</p>
             {targetName && <TargetName name={targetName} />}
-            <span>{phase === 'setup' ? t[modeMeta.setupHintKey] : t[modeMeta.questionHintKey]}</span>
+            {learningCapital && <span className="learn-capital">{t.capitalCity}: <strong>{learningCapital}</strong></span>}
+            <span>{isLearning ? (phase === 'setup' ? t.learningSetupHint : t.learningQuestionHint) : phase === 'setup' ? t[modeMeta.setupHintKey] : t[modeMeta.questionHintKey]}</span>
           </div>
 
           <div className="timer-card">
             <div className="timer-ring" style={{ '--timer': timerRatio } as CssVars} aria-hidden="true">
-              <span>{timeLeft}</span>
+              <span>{isLearning ? (phase === 'setup' ? currentRoundLimit : Math.min(roundIndex + 1, currentRoundLimit)) : timeLeft}</span>
             </div>
             <span className="sr-only" aria-live="polite">
-              {phase === 'finished' ? `${score}/${roundLimit}` : `${timeLeft} ${t.secondsLeft}`}
+              {phase === 'finished' ? `${score}/${currentRoundLimit}` : isLearning ? `${roundIndex + 1}/${currentRoundLimit}` : `${timeLeft} ${t.secondsLeft}`}
             </span>
           </div>
 
           <div className={`result-line ${result?.type ?? ''}`} role="status" aria-live="polite">
             {phase === 'finished'
-              ? interpolate(t.done, { bestStreak })
+              ? isLearning ? t.learningDone : interpolate(t.done, { bestStreak })
               : result?.type === 'correct'
                 ? t.correct
                 : result?.type === 'timeout'
                   ? interpolate(t.timeout, { answer: result.correctAnswer, country: result.correctAnswer })
                   : result?.type === 'wrong'
                     ? interpolate(t.wrong, { answer: result.correctAnswer, country: result.correctAnswer })
-                    : t[modeMeta.helperKey]}
+                    : isLearning ? t.learningHelper : t[modeMeta.helperKey]}
           </div>
 
-          <label className="country-select-label" htmlFor="country-answer">
-            {t.keyboardAnswer}
-          </label>
-          <select
-            id="country-answer"
-            className="country-select"
-            disabled={phase !== 'playing' || Boolean(result)}
-            onChange={chooseAnswerFromSelect}
-            defaultValue=""
-          >
-            <option value="">{t[modeMeta.chooseKey]}</option>
-            {answerOptions
-              .map((option) => (
-                <option key={option.id} value={option.id}>{option.name}</option>
-              ))}
-          </select>
+          {isLearning ? (
+            <button className="primary-button learning-next" type="button" disabled={phase !== 'playing'} onClick={nextLearningCountry}>
+              <ChevronRight size={18} />
+              {roundIndex + 1 >= currentRoundLimit ? t.finishLearning : t.nextCountry}
+            </button>
+          ) : (
+            <>
+              <label className="country-select-label" htmlFor="country-answer">
+                {t.keyboardAnswer}
+              </label>
+              <select
+                id="country-answer"
+                className="country-select"
+                disabled={phase !== 'playing' || Boolean(result)}
+                onChange={chooseAnswerFromSelect}
+                defaultValue=""
+              >
+                <option value="">{t[modeMeta.chooseKey]}</option>
+                {answerOptions
+                  .map((option) => (
+                    <option key={option.id} value={option.id}>{option.name}</option>
+                  ))}
+              </select>
+            </>
+          )}
         </div>
 
         <div className="map-panel">
@@ -868,9 +936,9 @@ function App() {
                   data-iso={country.mapId ?? undefined}
                   className={mapCountryClass(country)}
                   d={PATH(country) ?? undefined}
-                  onClick={() => activeGameMode === 'countries' && phase === 'playing' && !result && country.mapId && resolveRound(country.mapId)}
+                  onClick={() => activeGameMode === 'countries' && !isLearning && phase === 'playing' && !result && country.mapId && resolveRound(country.mapId)}
                 >
-                  <title>{activeGameMode === 'countries' && phase === 'playing' && !result ? t.selectCountry : getCountryDisplayName(country.mapId, language)}</title>
+                  <title>{activeGameMode === 'countries' && !isLearning && phase === 'playing' && !result ? t.selectCountry : getCountryDisplayName(country.mapId, language)}</title>
                 </path>
               ))}
             </g>
@@ -936,7 +1004,7 @@ function App() {
           {phase === 'finished' && (
             <div className="map-overlay">
               <TimerReset size={30} />
-              <strong>{score >= Math.ceil(roundLimit * 0.8) ? t.greatResult : t.tryAgain}</strong>
+              <strong>{isLearning ? t.learningDone : score >= Math.ceil(roundLimit * 0.8) ? t.greatResult : t.tryAgain}</strong>
               <button className="primary-button" type="button" onClick={startGame}>
                 <Play size={18} />
                 {t.playAgain}

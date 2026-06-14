@@ -246,6 +246,11 @@
   font-size: 18px;
 }
 
+.continent-picker {
+  justify-self: end;
+  width: min(100%, 680px);
+}
+
 .control-group {
   min-width: 0;
   padding: 14px;
@@ -435,6 +440,15 @@
   line-height: 1.35;
 }
 
+.capital-card .learn-capital {
+  color: #fffaf0;
+  font-size: 18px;
+}
+
+.learning-next {
+  width: 100%;
+}
+
 .timer-card {
   display: grid;
   place-items: center;
@@ -560,7 +574,7 @@
 }
 
 .ocean {
-  fill: #d8e8e9;
+  fill: #dbecef;
 }
 
 .map-grid {
@@ -582,15 +596,16 @@ pattern path {
 
 .sphere-outline {
   fill: none;
-  stroke: rgba(12, 119, 125, 0.18);
+  stroke: rgba(12, 119, 125, 0.24);
   stroke-width: 1;
   vector-effect: non-scaling-stroke;
 }
 
 .country-shape {
-  fill: #bdd0b4;
-  stroke: rgba(255, 250, 240, 0.78);
-  stroke-width: 0.7;
+  fill: #b7cdae;
+  stroke: rgba(68, 89, 70, 0.28);
+  stroke-width: 0.55;
+  stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
   cursor: pointer;
   transition: fill 140ms ease, stroke 140ms ease, filter 140ms ease, transform 140ms ease;
@@ -605,13 +620,13 @@ pattern path {
 }
 
 .country-shape.is-background {
-  fill: #c3d2b9;
+  fill: #c0d2b8;
   cursor: default;
   pointer-events: none;
 }
 
 .country-shape.is-background:hover {
-  fill: #c3d2b9;
+  fill: #c0d2b8;
   filter: none;
   transform: none;
 }
@@ -641,9 +656,9 @@ pattern path {
 .country-borders {
   fill: none;
   pointer-events: none;
-  stroke: rgba(255, 250, 240, 0.86);
+  stroke: rgba(255, 250, 240, 0.8);
   stroke-linejoin: round;
-  stroke-width: 0.75;
+  stroke-width: 0.5;
   vector-effect: non-scaling-stroke;
 }
 
@@ -839,7 +854,7 @@ pattern path {
 
 .mode-choice-grid.main-mode-grid {
   width: 100%;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
 }
 
 .mode-choice {
@@ -1343,7 +1358,7 @@ pattern path {
 
   .main-mode-grid {
     width: 100%;
-    grid-template-columns: repeat(8, minmax(0, 1fr));
+    grid-template-columns: repeat(9, minmax(0, 1fr));
     gap: 0;
   }
 
