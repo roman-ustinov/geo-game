@@ -2,6 +2,7 @@ import { type CSSProperties, type ChangeEvent, type FormEvent, useCallback, useE
 import { geoEqualEarth, geoPath } from 'd3-geo'
 import {
   BookOpen,
+  ChevronLeft,
   ChevronRight,
   Crosshair,
   LogOut,
@@ -35,6 +36,7 @@ import { getCapitalDisplayName } from './services/capitalNames'
 import { BORDERS_GEO, PLAYABLE_COUNTRIES, WORLD_FEATURES, getCountryDisplayName } from './services/countryDataset'
 import { buildGameResult, getGuestId, getResultsForOwner, saveGameResult } from './services/resultsService'
 import { DEFAULT_SETTINGS, GAME_MODES, isGameMode, validateGameSettings } from './services/settingsService'
+import { getCountryFacts, type CountryFact } from './services/wikimediaFacts'
 import { getWaterFeatureDisplayName, getWaterFeatures } from './services/waterFeatures'
 import type {
   AnswerOption,
@@ -210,15 +212,11 @@ const GAME_MODE_META: GameModeMeta = {
 }
 
 function TargetName({ name }: { name: string }) {
-  const words = name.split(/\s+/).filter(Boolean)
-  const maxChars = Math.max(...words.map((word) => word.length), 1)
-  const fontSize = Math.max(24, Math.min(58, Math.floor(320 / (maxChars * 0.58))))
+  const fontSize = Math.max(24, Math.min(44, Math.floor(320 / (name.length * 0.58))))
 
   return (
     <strong className="capital-name" style={{ '--capital-font-size': `${fontSize}px` } as CssVars}>
-      {words.map((word, index) => (
-        <span key={`${word}-${index}`}>{word}</span>
-      ))}
+      {name}
     </strong>
   )
 }
@@ -323,6 +321,11 @@ function projectFeaturePath(path: GeoPoint[]): string {
     .join(' ')
 }
 
+function getFlagEmoji(alpha2: string | undefined): string {
+  if (!alpha2 || alpha2.length !== 2) return ''
+  return [...alpha2.toUpperCase()].map((letter) => String.fromCodePoint(127397 + letter.charCodeAt(0))).join('')
+}
+
 function App() {
   const [language, setLanguage] = useState<Language>('sk')
   const [settings, setSettings] = usePersistentState<GameSettings>('capital-rush-settings', DEFAULT_SETTINGS)
@@ -354,6 +357,8 @@ function App() {
   const [authLoading, setAuthLoading] = useState(false)
   const [profileRefresh, setProfileRefresh] = useState(0)
   const [newAchievements, setNewAchievements] = useState<EarnedAchievement[]>([])
+  const [countryFacts, setCountryFacts] = useState<CountryFact[]>([])
+  const [countryFactsLoading, setCountryFactsLoading] = useState(false)
   const [gameStartedAt, setGameStartedAt] = useState<string | null>(null)
   const roundStartedAtRef = useRef<number | null>(null)
   const roundDetailsRef = useRef<RoundDetail[]>([])
@@ -386,11 +391,14 @@ function App() {
   const modeMeta = GAME_MODE_META[activeGameMode]
   const targetName = target ? (isLearning && target.mode === 'countries' ? getCountryDisplayName(target.iso, language) : getTargetDisplayName(target, language)) : null
   const learningCapital = isLearning && target?.mode === 'countries' ? getCapitalDisplayName(target.capital, language) : null
+  const learningFlag = isLearning && target?.mode === 'countries' ? getFlagEmoji(target.alpha2) : ''
   const capitalPoint = target?.mode === 'countries' && target.capitalPoint ? PROJECTION(target.capitalPoint) : null
   const answerOptions = useMemo(() => getAnswerOptions(activeGameMode, language), [activeGameMode, language])
   const progress = target ? ((roundIndex + (result || isLearning ? 1 : 0)) / currentRoundLimit) * 100 : 0
   const timerRatio = isLearning ? progress / 100 : Math.max(0, timeLeft / secondsPerRound)
   const isPlaying = phase === 'playing' && !result && !isLearning
+  const canGoPreviousLearningCountry = isLearning && phase === 'playing' && roundIndex > 0
+  const canGoNextLearningCountry = isLearning && phase !== 'paused' && (phase !== 'finished' || roundIndex + 1 < currentRoundLimit)
   const themeIcon = themeMode === 'light' ? <Sun size={20} /> : themeMode === 'dark' ? <Moon size={20} /> : <Monitor size={20} />
   const themeLabel = themeMode === 'light' ? t.lightTheme : themeMode === 'dark' ? t.darkTheme : t.autoTheme
 
@@ -430,6 +438,28 @@ function App() {
     return `${clamp(x + (width - zoomedWidth) / 2, 0, WIDTH - zoomedWidth).toFixed(1)} ${clamp(y + (height - zoomedHeight) / 2, 0, HEIGHT - zoomedHeight).toFixed(1)} ${zoomedWidth.toFixed(1)} ${zoomedHeight.toFixed(1)}`
   }, [baseMapViewBox, mapZoom])
   const capitalMarkerRadius = (Number(mapViewBox.split(' ')[2]) || WIDTH) / 260
+
+  useEffect(() => {
+    if (!isLearning || phase === 'setup' || target?.mode !== 'countries' || !target.alpha2) {
+      setCountryFacts([])
+      setCountryFactsLoading(false)
+      return
+    }
+
+    let cancelled = false
+    setCountryFactsLoading(true)
+    getCountryFacts(target.alpha2, language)
+      .then((facts) => {
+        if (!cancelled) setCountryFacts(facts)
+      })
+      .finally(() => {
+        if (!cancelled) setCountryFactsLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [isLearning, language, phase, target])
 
   const resolveRound = useCallback((answerId: string | null, mode: RoundResolveMode = 'answer') => {
     if (!target || result || isLearning) return
@@ -605,6 +635,12 @@ function App() {
     }
     setMapZoom(1)
     setRoundIndex((value) => value + 1)
+  }
+
+  function previousLearningCountry() {
+    if (!canGoPreviousLearningCountry) return
+    setMapZoom(1)
+    setRoundIndex((value) => value - 1)
   }
 
   function clearGameState(nextSecondsPerRound = secondsPerRound) {
@@ -899,6 +935,7 @@ function App() {
 
           <div className={targetName ? 'capital-card has-target' : 'capital-card is-empty'}>
             <p>{isLearning ? t.countryName : t[modeMeta.targetLabelKey]}</p>
+            {learningFlag && <span className="country-flag" aria-hidden="true">{learningFlag}</span>}
             {targetName && <TargetName name={targetName} />}
             {learningCapital && <span className="learn-capital">{t.capitalCity}: <strong>{learningCapital}</strong></span>}
             <span>{isLearning ? (phase === 'setup' ? t.learningSetupHint : t.learningQuestionHint) : phase === 'setup' ? t[modeMeta.setupHintKey] : t[modeMeta.questionHintKey]}</span>
@@ -926,10 +963,18 @@ function App() {
           </div>
 
           {isLearning ? (
-            <button className="primary-button learning-next" type="button" disabled={phase === 'paused'} onClick={nextLearningCountry}>
-              <ChevronRight size={18} />
-              {roundIndex + 1 >= currentRoundLimit ? t.finishLearning : t.nextCountry}
-            </button>
+            <>
+              <div className="learning-nav">
+                <button className="secondary-button" type="button" disabled={!canGoPreviousLearningCountry} onClick={previousLearningCountry}>
+                  <ChevronLeft size={18} />
+                  {t.previousCountry}
+                </button>
+                <button className="primary-button learning-next" type="button" disabled={!canGoNextLearningCountry} onClick={nextLearningCountry}>
+                  <ChevronRight size={18} />
+                  {roundIndex + 1 >= currentRoundLimit ? t.finishLearning : t.nextCountry}
+                </button>
+              </div>
+            </>
           ) : (
             <>
               <label className="country-select-label" htmlFor="country-answer">
@@ -956,113 +1001,132 @@ function App() {
           <div className="progress-track" aria-hidden="true">
             <span style={{ width: `${progress}%` }} />
           </div>
-          <svg className="world-map" viewBox={mapViewBox} role="img" aria-label={t.mapLabel}>
-            <defs>
-              <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
-                <path d="M 50 0 L 0 0 0 50" fill="none" />
-              </pattern>
-            </defs>
-            <rect className="ocean" width={WIDTH} height={HEIGHT} rx="18" />
-            <rect className="map-grid" width={WIDTH} height={HEIGHT} />
-            <path className="sphere-outline" d={PATH({ type: 'Sphere' }) ?? undefined} />
+          <div className="map-frame">
+            <svg className="world-map" viewBox={mapViewBox} role="img" aria-label={t.mapLabel}>
+              <defs>
+                <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
+                  <path d="M 50 0 L 0 0 0 50" fill="none" />
+                </pattern>
+              </defs>
+              <rect className="ocean" width={WIDTH} height={HEIGHT} rx="18" />
+              <rect className="map-grid" width={WIDTH} height={HEIGHT} />
+              <path className="sphere-outline" d={PATH({ type: 'Sphere' }) ?? undefined} />
 
-            <g className="country-layer">
-              {WORLD_FEATURES.map((country, index) => (
-                <path
-                  key={`${country.mapId ?? country.properties?.name ?? 'country'}-${index}`}
-                  data-iso={country.mapId ?? undefined}
-                  className={mapCountryClass(country)}
-                  d={PATH(country) ?? undefined}
-                  onClick={() => activeGameMode === 'countries' && !isLearning && phase === 'playing' && !result && country.mapId && resolveRound(country.mapId)}
-                >
-                  <title>{activeGameMode === 'countries' && !isLearning && phase === 'playing' && !result ? t.selectCountry : getCountryDisplayName(country.mapId, language)}</title>
-                </path>
-              ))}
-            </g>
-
-            <path className="country-borders" d={PATH(BORDERS_GEO) ?? undefined} />
-
-            {isLearning && phase !== 'setup' && capitalPoint && (
-              <g className="capital-marker" aria-label={learningCapital ?? undefined}>
-                <circle cx={capitalPoint[0]} cy={capitalPoint[1]} r={capitalMarkerRadius} />
-                <circle cx={capitalPoint[0]} cy={capitalPoint[1]} r={capitalMarkerRadius * 2.35} />
-              </g>
-            )}
-
-            {activeGameMode !== 'countries' && (
-              <g key={`water-layer-${activeGameMode}`} className="water-layer" aria-label={t[modeMeta.promptKey]}>
-                {getWaterFeatures(activeGameMode).map((feature) => (
-                  <g key={feature.id} className={mapWaterClass(feature)}>
-                    <g className="water-regions">
-                      {feature.regions?.map((region, index) => {
-                        const projected = projectWaterRegion(region)
-                        if (!projected) return null
-
-                        return (
-                          <ellipse
-                            key={`${feature.id}-region-${index}`}
-                            data-feature-id={feature.id}
-                            cx={projected.cx}
-                            cy={projected.cy}
-                            rx={projected.rx}
-                            ry={projected.ry}
-                            onClick={() => phase === 'playing' && !result && resolveRound(feature.id)}
-                          >
-                            <title>{phase === 'playing' && !result ? t[modeMeta.selectTitleKey] : getWaterFeatureDisplayName(feature, language)}</title>
-                          </ellipse>
-                        )
-                      })}
-                    </g>
-                    <g className="water-paths">
-                      {feature.paths?.map((path, index) => {
-                        const points = projectFeaturePath(path)
-                        if (!points) return null
-
-                        return (
-                          <polyline
-                            key={`${feature.id}-path-${index}`}
-                            data-feature-id={feature.id}
-                            points={points}
-                            style={{ '--feature-line-width': feature.lineWidth ?? 9 } as CssVars}
-                            onClick={() => phase === 'playing' && !result && resolveRound(feature.id)}
-                          >
-                            <title>{phase === 'playing' && !result ? t[modeMeta.selectTitleKey] : getWaterFeatureDisplayName(feature, language)}</title>
-                          </polyline>
-                        )
-                      })}
-                    </g>
-                  </g>
+              <g className="country-layer">
+                {WORLD_FEATURES.map((country, index) => (
+                  <path
+                    key={`${country.mapId ?? country.properties?.name ?? 'country'}-${index}`}
+                    data-iso={country.mapId ?? undefined}
+                    className={mapCountryClass(country)}
+                    d={PATH(country) ?? undefined}
+                    onClick={() => activeGameMode === 'countries' && !isLearning && phase === 'playing' && !result && country.mapId && resolveRound(country.mapId)}
+                  >
+                    <title>{activeGameMode === 'countries' && !isLearning && phase === 'playing' && !result ? t.selectCountry : getCountryDisplayName(country.mapId, language)}</title>
+                  </path>
                 ))}
               </g>
-            )}
 
-          </svg>
+              <path className="country-borders" d={PATH(BORDERS_GEO) ?? undefined} />
 
-          <div className="map-zoom-controls" aria-label="Zoom mapy">
-            <button type="button" onClick={() => zoomMap(-1)} aria-label="Oddialiť mapu" title="Oddialiť mapu">
-              <Minus size={18} />
-            </button>
-            <button type="button" onClick={() => zoomMap(1)} aria-label="Priblížiť mapu" title="Priblížiť mapu">
-              <Plus size={18} />
-            </button>
-          </div>
+              {isLearning && phase !== 'setup' && capitalPoint && (
+                <g className="capital-marker" aria-label={learningCapital ?? undefined}>
+                  <circle cx={capitalPoint[0]} cy={capitalPoint[1]} r={capitalMarkerRadius} />
+                  <circle cx={capitalPoint[0]} cy={capitalPoint[1]} r={capitalMarkerRadius * 2.35} />
+                </g>
+              )}
 
-          {phase === 'paused' && (
-            <div className="map-overlay">
-              <Settings2 size={28} />
-              <strong>{t.paused}</strong>
-            </div>
-          )}
+              {activeGameMode !== 'countries' && (
+                <g key={`water-layer-${activeGameMode}`} className="water-layer" aria-label={t[modeMeta.promptKey]}>
+                  {getWaterFeatures(activeGameMode).map((feature) => (
+                    <g key={feature.id} className={mapWaterClass(feature)}>
+                      <g className="water-regions">
+                        {feature.regions?.map((region, index) => {
+                          const projected = projectWaterRegion(region)
+                          if (!projected) return null
 
-          {phase === 'finished' && (
-            <div className="map-overlay">
-              <TimerReset size={30} />
-              <strong>{isLearning ? t.learningDone : score >= Math.ceil(roundLimit * 0.8) ? t.greatResult : t.tryAgain}</strong>
-              <button className="primary-button" type="button" onClick={startGame}>
-                <Play size={18} />
-                {t.playAgain}
+                          return (
+                            <ellipse
+                              key={`${feature.id}-region-${index}`}
+                              data-feature-id={feature.id}
+                              cx={projected.cx}
+                              cy={projected.cy}
+                              rx={projected.rx}
+                              ry={projected.ry}
+                              onClick={() => phase === 'playing' && !result && resolveRound(feature.id)}
+                            >
+                              <title>{phase === 'playing' && !result ? t[modeMeta.selectTitleKey] : getWaterFeatureDisplayName(feature, language)}</title>
+                            </ellipse>
+                          )
+                        })}
+                      </g>
+                      <g className="water-paths">
+                        {feature.paths?.map((path, index) => {
+                          const points = projectFeaturePath(path)
+                          if (!points) return null
+
+                          return (
+                            <polyline
+                              key={`${feature.id}-path-${index}`}
+                              data-feature-id={feature.id}
+                              points={points}
+                              style={{ '--feature-line-width': feature.lineWidth ?? 9 } as CssVars}
+                              onClick={() => phase === 'playing' && !result && resolveRound(feature.id)}
+                            >
+                              <title>{phase === 'playing' && !result ? t[modeMeta.selectTitleKey] : getWaterFeatureDisplayName(feature, language)}</title>
+                            </polyline>
+                          )
+                        })}
+                      </g>
+                    </g>
+                  ))}
+                </g>
+              )}
+            </svg>
+
+            <div className="map-zoom-controls" aria-label="Zoom mapy">
+              <button type="button" onClick={() => zoomMap(-1)} aria-label="Oddialiť mapu" title="Oddialiť mapu">
+                <Minus size={18} />
+              </button>
+              <button type="button" onClick={() => zoomMap(1)} aria-label="Priblížiť mapu" title="Priblížiť mapu">
+                <Plus size={18} />
               </button>
             </div>
+
+            {phase === 'paused' && (
+              <div className="map-overlay">
+                <Settings2 size={28} />
+                <strong>{t.paused}</strong>
+              </div>
+            )}
+
+            {phase === 'finished' && (
+              <div className="map-overlay">
+                <TimerReset size={30} />
+                <strong>{isLearning ? t.learningDone : score >= Math.ceil(roundLimit * 0.8) ? t.greatResult : t.tryAgain}</strong>
+                <button className="primary-button" type="button" onClick={startGame}>
+                  <Play size={18} />
+                  {t.playAgain}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {isLearning && (countryFactsLoading || countryFacts.length > 0) && (
+            <section className="country-facts" aria-label={t.countryFacts}>
+              <h3>{t.countryFacts}</h3>
+              {countryFactsLoading ? (
+                <p>{t.loadingFacts}</p>
+              ) : (
+                <dl>
+                  {countryFacts.map((fact) => (
+                    <div key={fact.label}>
+                      <dt>{fact.label}</dt>
+                      <dd>{fact.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+            </section>
           )}
         </div>
       </section>

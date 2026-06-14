@@ -45,6 +45,7 @@ const standardPlayable = Object.entries(countryDirectory)
     return [{
       id: alpha2.toLowerCase(),
       iso,
+      alpha2,
       name: geo?.properties?.name ?? country.name,
       continent: country.continent as ContinentCode,
       capital: country.capital,

@@ -323,6 +323,15 @@
   transition: transform 160ms ease, box-shadow 160ms ease;
 }
 
+.primary-button:disabled,
+.secondary-button:disabled,
+.map-zoom-controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
+  transform: none;
+  box-shadow: none;
+}
+
 .action-row .primary-button,
 .action-row .secondary-button {
   width: 100%;
@@ -392,6 +401,7 @@
 }
 
 .capital-card {
+  position: relative;
   min-height: 104px;
   display: grid;
   align-content: start;
@@ -400,6 +410,14 @@
   background:
     radial-gradient(circle at 15% 20%, rgba(244, 170, 64, 0.34), transparent 25%),
     linear-gradient(145deg, #111820, #174c55);
+}
+
+.country-flag {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  font-size: 42px;
+  line-height: 1;
 }
 
 .capital-card.has-target {
@@ -415,9 +433,7 @@
 }
 
 .capital-name {
-  display: grid;
-  gap: 2px;
-  align-items: center;
+  display: block;
   max-width: 100%;
   justify-self: start;
   padding: 6px 0 8px;
@@ -428,14 +444,6 @@
   line-height: 1;
   letter-spacing: 0;
   text-shadow: 0 2px 16px rgba(0, 0, 0, 0.28);
-}
-
-.capital-name span {
-  display: block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: clip;
-  white-space: nowrap;
 }
 
 .capital-card span {
@@ -451,6 +459,58 @@
 
 .learning-next {
   width: 100%;
+}
+
+.learning-nav {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.learning-nav .primary-button,
+.learning-nav .secondary-button {
+  width: 100%;
+  min-width: 0;
+}
+
+.country-facts {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #edf2ed;
+}
+
+.country-facts h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+
+.country-facts dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.country-facts div {
+  display: grid;
+  gap: 2px;
+}
+
+.country-facts dt {
+  color: #65707a;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.country-facts dd,
+.country-facts p {
+  margin: 0;
+  color: #15202b;
+  font-size: 13px;
+  line-height: 1.35;
+  white-space: pre-line;
 }
 
 .timer-card {
@@ -564,6 +624,11 @@
   border-radius: inherit;
   background: linear-gradient(90deg, #0c777d, #d3562f);
   transition: width 220ms ease;
+}
+
+.map-frame {
+  position: relative;
+  width: 100%;
 }
 
 .world-map {
@@ -1493,6 +1558,10 @@ pattern path {
 
   .map-panel .map-overlay {
     min-width: 1180px;
+  }
+
+  .map-frame {
+    width: 1180px;
   }
 
   .world-map {

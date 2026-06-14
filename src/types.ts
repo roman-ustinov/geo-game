@@ -42,6 +42,7 @@ export type CountryFeature = Feature<Geometry, { name?: string }> & {
 export type PlayableCountry = {
   id: string
   iso: string
+  alpha2?: string
   name: string
   continent: ContinentCode
   capital: string
