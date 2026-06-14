@@ -1,16 +1,51 @@
-# React + Vite
+# Geo Rush
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Geo Rush is a blind-map geography game. The game shows a target name, and you click the matching place on the world map before the timer runs out.
 
-Currently, two official plugins are available:
+## Game Modes
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Countries: match a capital city to its country.
+- Lakes, seas, and oceans: find the named water feature.
+- Rivers, mountains, deserts, and islands: find the named geographic feature.
 
-## React Compiler
+## How To Play
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+1. Choose a game mode from the mode bar.
+2. Press Start.
+3. Read the prompt on the left.
+4. Click the correct country or feature on the map.
+5. Use the answer dropdown if clicking the map is difficult.
+6. Finish all rounds and check your score, streak, achievements, and history in the profile dialog.
 
-## Expanding the ESLint configuration
+Each correct answer adds one point. Wrong answers and timeouts end the current streak. The round advances automatically after each answer.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Controls
+
+- Start, pause, continue, and reset from the control bar.
+- Change round time and round count in settings.
+- Toggle sound, theme, and language from the top-right buttons.
+- Log in locally to keep separate profiles, achievements, and game history.
+
+All saved data stays in browser local storage.
+
+## Development
+
+Install dependencies:
+
+```sh
+npm install
+```
+
+Run locally:
+
+```sh
+npm run dev
+```
+
+Check the project:
+
+```sh
+npm run lint
+npm run build
+npm test
+```
