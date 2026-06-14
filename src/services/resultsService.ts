@@ -53,8 +53,7 @@ export function buildGameResult({
   startedAt,
   completedAt = new Date().toISOString(),
 }: BuildGameResultInput): GameResult {
-  const totalRounds = rounds
-  const accuracy = totalRounds > 0 ? Math.round((correctAnswers / totalRounds) * 100) : 0
+  const accuracy = rounds > 0 ? Math.round((correctAnswers / rounds) * 100) : 0
   const durationMs = Math.max(0, new Date(completedAt).getTime() - new Date(startedAt).getTime())
 
   return {
@@ -63,7 +62,7 @@ export function buildGameResult({
     ownerType: user ? 'user' : 'guest',
     userEmail: user?.email ?? null,
     completedAt,
-    rounds: totalRounds,
+    rounds,
     secondsPerRound,
     correctAnswers,
     incorrectAnswers,

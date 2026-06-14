@@ -84,8 +84,8 @@ export function evaluateAchievements({ result, ownerResults, existingAchievement
   return newlyEarned
 }
 
-export function saveNewAchievements(ownerId: string, achievements: EarnedAchievement[]): Achievement[] {
-  if (!achievements.length) return getAchievementsForOwner(ownerId)
+export function saveNewAchievements(ownerId: string, achievements: EarnedAchievement[]): void {
+  if (!achievements.length) return
 
   const stored = getAchievements()
   const ownerAchievements = stored[ownerId] ?? {}
@@ -98,5 +98,4 @@ export function saveNewAchievements(ownerId: string, achievements: EarnedAchieve
     ...stored,
     [ownerId]: ownerAchievements,
   })
-  return getAchievementsForOwner(ownerId)
 }

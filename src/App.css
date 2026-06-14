@@ -888,7 +888,6 @@ pattern path {
   font-weight: 750;
 }
 
-.success-message,
 .empty-state {
   margin: 0;
   color: #0a5f45;

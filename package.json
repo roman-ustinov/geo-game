@@ -11,7 +11,6 @@
     "test": "vitest run --environment jsdom"
   },
   "dependencies": {
-    "@tanstack/react-query": "^5.101.0",
     "countries-list": "^3.3.0",
     "d3-geo": "^3.1.1",
     "i18n-iso-countries": "^7.14.0",

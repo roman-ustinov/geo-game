@@ -1,5 +1,4 @@
 import { type CSSProperties, type ChangeEvent, type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { geoEqualEarth, geoPath } from 'd3-geo'
 import {
   Crosshair,
@@ -334,7 +333,6 @@ function App() {
     roundLimit: String(settings.roundLimit),
   })
   const [settingsErrors, setSettingsErrors] = useState<Partial<Record<'secondsPerRound' | 'roundLimit', string>>>({})
-  const [settingsSaved, setSettingsSaved] = useState(false)
   const [currentUser, setCurrentUser] = useState<AppUser | null>(() => getCurrentUser())
   const [authMode, setAuthMode] = useState<AuthMode>('login')
   const [authForm, setAuthForm] = useState({ email: '', password: '' })
@@ -346,12 +344,7 @@ function App() {
   const roundStartedAtRef = useRef<number | null>(null)
   const roundDetailsRef = useRef<RoundDetail[]>([])
   const playerRef = useRef<AudioPlayer>(() => {})
-  const { data: t = loadTranslations(language) } = useQuery<TranslationDictionary>({
-    queryKey: ['translations', language],
-    queryFn: () => loadTranslations(language),
-    placeholderData: () => loadTranslations(language),
-    staleTime: Infinity,
-  })
+  const t = loadTranslations(language)
 
   const normalizedSettings = useMemo(() => ({
     ...DEFAULT_SETTINGS,
@@ -551,11 +544,7 @@ function App() {
   }
 
   function resetGame() {
-    setPhase('setup')
-    setSelectedAnswerId(null)
-    setResult(null)
-    setFlash(null)
-    setTimeLeft(secondsPerRound)
+    clearGameState()
   }
 
   function clearGameState(nextSecondsPerRound = secondsPerRound) {
@@ -593,7 +582,6 @@ function App() {
       roundLimit: String(normalizedSettings.roundLimit),
     })
     setSettingsErrors({})
-    setSettingsSaved(false)
     setActiveDialog('settings')
   }
 
@@ -635,7 +623,6 @@ function App() {
     }
     setSettings(parsedSettings)
     if (phase === 'setup') setTimeLeft(parsedSettings.secondsPerRound)
-    setSettingsSaved(true)
     setActiveDialog(null)
   }
 
@@ -670,25 +657,23 @@ function App() {
     event.target.value = ''
   }
 
+  function answerClass(id: string | null | undefined, base: string[]): string {
+    return [
+      ...base,
+      target?.id === id && result && 'is-target',
+      selectedAnswerId === id && 'is-selected',
+      result?.type === 'correct' && target?.id === id && 'is-correct',
+      result?.type !== 'correct' && target?.id === id && result && 'is-missed',
+      selectedAnswerId === id && selectedAnswerId !== target?.id && 'is-wrong',
+    ].filter(Boolean).join(' ')
+  }
+
   function mapCountryClass(country: CountryFeature): string {
-    const classes = ['country-shape']
-    if (activeGameMode !== 'countries') classes.push('is-background')
-    if (target?.id === country.mapId && result) classes.push('is-target')
-    if (selectedAnswerId === country.mapId) classes.push('is-selected')
-    if (result?.type === 'correct' && target?.id === country.mapId) classes.push('is-correct')
-    if (result?.type !== 'correct' && target?.id === country.mapId && result) classes.push('is-missed')
-    if (selectedAnswerId === country.mapId && selectedAnswerId !== target?.id) classes.push('is-wrong')
-    return classes.join(' ')
+    return answerClass(country.mapId, ['country-shape', activeGameMode !== 'countries' ? 'is-background' : ''])
   }
 
   function mapWaterClass(feature: WaterFeature): string {
-    const classes = ['water-feature', `water-feature-${activeGameMode}`]
-    if (target?.id === feature.id && result) classes.push('is-target')
-    if (selectedAnswerId === feature.id) classes.push('is-selected')
-    if (result?.type === 'correct' && target?.id === feature.id) classes.push('is-correct')
-    if (result?.type !== 'correct' && target?.id === feature.id && result) classes.push('is-missed')
-    if (selectedAnswerId === feature.id && selectedAnswerId !== target?.id) classes.push('is-wrong')
-    return classes.join(' ')
+    return answerClass(feature.id, ['water-feature', `water-feature-${activeGameMode}`])
   }
 
   return (
@@ -1002,7 +987,6 @@ function App() {
             {settingsErrors.roundLimit && <p id="round-error" className="field-error">{settingsErrors.roundLimit}</p>}
 
             <button className="primary-button" type="submit">{t.saveSettings}</button>
-            {settingsSaved && <p className="success-message" role="status">{t.settingsSaved}</p>}
           </form>
         </AppDialog>
       )}
