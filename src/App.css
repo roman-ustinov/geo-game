@@ -203,6 +203,15 @@
   transform: translateY(-1px);
 }
 
+.mode-choice-button svg,
+.icon-button svg,
+.primary-button svg,
+.secondary-button svg,
+.mini-icon-button svg,
+.map-zoom-controls svg {
+  flex: 0 0 auto;
+}
+
 .mode-choice-button:focus-visible {
   outline: 3px solid rgba(12, 119, 125, 0.28);
   outline-offset: 2px;
@@ -1593,15 +1602,11 @@ pattern path {
 
   .mode-choice-button {
     min-height: 44px;
-    gap: 0;
+    gap: 2px;
     padding: 0 1px;
     font-size: 9px;
     line-height: 1.05;
     overflow-wrap: anywhere;
-  }
-
-  .mode-choice-button svg {
-    display: none;
   }
 
   .action-row {
