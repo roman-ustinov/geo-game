@@ -138,9 +138,13 @@
   color: #0b5f65;
 }
 
-.language-button span {
-  font-size: 23px;
-  line-height: 1;
+.language-button img {
+  width: 28px;
+  height: 21px;
+  display: block;
+  border-radius: 3px;
+  object-fit: cover;
+  box-shadow: 0 0 0 1px rgba(21, 32, 43, 0.14);
 }
 
 .mode-band {
@@ -478,8 +482,11 @@
   position: absolute;
   top: 14px;
   right: 14px;
-  font-size: 42px;
-  line-height: 1;
+  width: 46px;
+  height: 34px;
+  border-radius: 5px;
+  object-fit: cover;
+  box-shadow: 0 0 0 1px rgba(255, 250, 240, 0.28), 0 8px 18px rgba(0, 0, 0, 0.18);
 }
 
 .capital-card.has-target {

@@ -2,16 +2,16 @@ import type { Language } from './types'
 
 export const LANGUAGES = {
   sk: {
-    flag: '🇬🇧',
+    flagCode: 'gb',
     next: 'en',
     label: 'Prepnúť na angličtinu',
   },
   en: {
-    flag: '🇸🇰',
+    flagCode: 'sk',
     next: 'sk',
     label: 'Switch to Slovak',
   },
-} as const satisfies Record<Language, { flag: string; next: Language; label: string }>
+} as const satisfies Record<Language, { flagCode: string; next: Language; label: string }>
 
 const translations = {
   sk: {

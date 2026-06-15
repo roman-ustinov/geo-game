@@ -334,9 +334,9 @@ function projectFeaturePath(path: GeoPoint[]): string {
     .join(' ')
 }
 
-function getFlagEmoji(alpha2: string | undefined): string {
+function getFlagUrl(alpha2: string | undefined, width: 40 | 80 = 80): string {
   if (!alpha2 || alpha2.length !== 2) return ''
-  return [...alpha2.toUpperCase()].map((letter) => String.fromCodePoint(127397 + letter.charCodeAt(0))).join('')
+  return `https://flagcdn.com/w${width}/${alpha2.toLowerCase()}.png`
 }
 
 function getBrowserLanguage(): Language {
@@ -373,7 +373,7 @@ function buildLearningProgress(continent: ContinentCode, deck: GameItem[], round
 function App() {
   const [language, setLanguage] = usePersistentState<Language>('capital-rush-language', getBrowserLanguage())
   const [settings, setSettings] = usePersistentState<GameSettings>('capital-rush-settings', DEFAULT_SETTINGS)
-  const [playMode, setPlayMode] = usePersistentState<PlayMode>('capital-rush-play-mode', 'quiz')
+  const [playMode, setPlayMode] = usePersistentState<PlayMode>('capital-rush-primary-play-mode', 'learn')
   const [learningContinent, setLearningContinent] = usePersistentState<ContinentCode>('capital-rush-learning-continent', 'EU')
   const [learningProgress, setLearningProgress] = usePersistentState<LearningProgress | null>(LEARNING_PROGRESS_KEY, null)
   const [themeMode, setThemeMode] = usePersistentState<ThemeMode>('capital-rush-theme', 'auto')
@@ -453,7 +453,7 @@ function App() {
   const modeMeta = GAME_MODE_META[activeGameMode]
   const targetName = target ? (isLearning && target.mode === 'countries' ? getCountryDisplayName(target.iso, language) : getTargetDisplayName(target, language)) : null
   const learningCapital = isLearning && target?.mode === 'countries' ? getCapitalDisplayName(target.capital, language) : null
-  const learningFlag = isLearning && target?.mode === 'countries' ? getFlagEmoji(target.alpha2) : ''
+  const learningFlag = isLearning && target?.mode === 'countries' ? getFlagUrl(target.alpha2) : ''
   const capitalPoint = target?.mode === 'countries' && target.capitalPoint ? PROJECTION(target.capitalPoint) : null
   const answerOptions = useMemo(() => getAnswerOptions(activeGameMode, language), [activeGameMode, language])
   const progress = target ? ((roundIndex + (result || isLearning ? 1 : 0)) / currentRoundLimit) * 100 : 0
@@ -532,6 +532,39 @@ function App() {
     if (!isLearning || !deck.length || (phase !== 'playing' && phase !== 'finished')) return
     setLearningProgress(buildLearningProgress(learningContinent, deck, roundIndex, phase))
   }, [deck, isLearning, learningContinent, phase, roundIndex, setLearningProgress])
+
+  useEffect(() => {
+    if (!isLearning || phase === 'setup') return undefined
+
+    function onKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.defaultPrevented) return
+      if (event.target instanceof HTMLElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(event.target.tagName)) return
+
+      if (event.key === 'ArrowLeft' && canGoPreviousLearningCountry) {
+        event.preventDefault()
+        const previousIndex = roundIndex - 1
+        setMapZoom(1)
+        setMapPan({ x: 0, y: 0 })
+        setRoundIndex(previousIndex)
+        setLearningProgress(buildLearningProgress(learningContinent, deck, previousIndex, 'playing'))
+      } else if (event.key === 'ArrowRight' && canGoNextLearningCountry) {
+        event.preventDefault()
+        if (roundIndex + 1 >= currentRoundLimit) {
+          setPhase('finished')
+          setLearningProgress(buildLearningProgress(learningContinent, deck, roundIndex, 'finished'))
+          return
+        }
+        const nextIndex = roundIndex + 1
+        setMapZoom(1)
+        setMapPan({ x: 0, y: 0 })
+        setRoundIndex(nextIndex)
+        setLearningProgress(buildLearningProgress(learningContinent, deck, nextIndex, 'playing'))
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [canGoNextLearningCountry, canGoPreviousLearningCountry, currentRoundLimit, deck, isLearning, learningContinent, phase, roundIndex, setLearningProgress])
 
   const resolveRound = useCallback((answerId: string | null, mode: RoundResolveMode = 'answer') => {
     if (!target || result || isLearning) return
@@ -723,6 +756,8 @@ function App() {
     } else if (event.key === '0') {
       event.preventDefault()
       resetMapView()
+    } else if (isLearning && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+      return
     } else if (event.key === 'ArrowLeft') {
       event.preventDefault()
       panMap(-0.08, 0)
@@ -1023,7 +1058,7 @@ function App() {
             aria-label={LANGUAGES[language].label}
             title={LANGUAGES[language].label}
           >
-            <span>{LANGUAGES[language].flag}</span>
+            <img src={getFlagUrl(LANGUAGES[language].flagCode, 40)} alt="" width="28" height="21" loading="lazy" />
           </button>
           <button
             className="icon-button"
@@ -1065,6 +1100,16 @@ function App() {
         </button>
         {!modesCollapsed && (
           <div className="mode-choice-grid main-mode-grid" role="radiogroup" aria-label={t.gameMode}>
+            <button
+              className={isLearning ? 'mode-choice-button active' : 'mode-choice-button'}
+              type="button"
+              role="radio"
+              aria-checked={isLearning}
+              onClick={() => changeLearningContinent(learningContinent)}
+            >
+              <BookOpen size={18} />
+              <span>{t.modeLearning}</span>
+            </button>
             {GAME_MODES.map((mode) => {
               const ChoiceIcon = GAME_MODE_META[mode].icon
               const isActive = playMode === 'quiz' && configuredGameMode === mode
@@ -1083,16 +1128,6 @@ function App() {
                 </button>
               )
             })}
-            <button
-              className={isLearning ? 'mode-choice-button active' : 'mode-choice-button'}
-              type="button"
-              role="radio"
-              aria-checked={isLearning}
-              onClick={() => changeLearningContinent(learningContinent)}
-            >
-              <BookOpen size={18} />
-              <span>{t.modeLearning}</span>
-            </button>
           </div>
         )}
       </section>
@@ -1155,7 +1190,7 @@ function App() {
 
           <div className={targetName ? 'capital-card has-target' : 'capital-card is-empty'}>
             <p>{isLearning ? t.countryName : t[modeMeta.targetLabelKey]}</p>
-            {learningFlag && <span className="country-flag" aria-hidden="true">{learningFlag}</span>}
+            {learningFlag && <img className="country-flag" src={learningFlag} alt="" width="46" height="34" loading="lazy" />}
             {targetName && <TargetName name={targetName} />}
             {learningCapital && <span className="learn-capital">{t.capitalCity}: <strong>{learningCapital}</strong></span>}
             <span>{isLearning ? (phase === 'setup' ? t.learningSetupHint : t.learningQuestionHint) : phase === 'setup' ? t[modeMeta.setupHintKey] : t[modeMeta.questionHintKey]}</span>
