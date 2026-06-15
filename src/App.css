@@ -311,6 +311,8 @@
   border-radius: 7px;
   color: #25313d;
   background: #eef1ee;
+  font: inherit;
+  font-weight: 820;
   transition: background 160ms ease, color 160ms ease, transform 160ms ease;
 }
 

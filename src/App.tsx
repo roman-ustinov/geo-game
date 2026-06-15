@@ -73,6 +73,7 @@ type AuthMode = 'login' | 'register'
 type ThemeMode = 'auto' | 'light' | 'dark'
 type PlayMode = 'quiz' | 'learn'
 type MapSize = 'normal' | 'large' | 'full'
+type LearningProgress = { continent: ContinentCode; deckIds: string[]; roundIndex: number; phase: 'playing' | 'finished' }
 type RoundResolveMode = 'answer' | 'timeout'
 type AudioCue = 'start' | 'correct' | 'wrong' | 'timeout'
 type AudioPlayer = (type: AudioCue) => void
@@ -81,6 +82,7 @@ type CssVars = CSSProperties & Record<`--${string}`, string | number>
 type MapTooltip = { text: string; x: number; y: number } | null
 const CONTINENTS: ContinentCode[] = ['EU', 'AS', 'AF', 'NA', 'SA', 'OC']
 const MAP_ZOOM_STEPS = [0, 0.4, 0.7, 1, 1.25, 1.5, 1.75, 2]
+const LEARNING_PROGRESS_KEY = 'capital-rush-learning-progress'
 
 type GameModeMeta = Record<GameMode, {
   icon: LucideIcon
@@ -336,16 +338,49 @@ function getFlagEmoji(alpha2: string | undefined): string {
   return [...alpha2.toUpperCase()].map((letter) => String.fromCodePoint(127397 + letter.charCodeAt(0))).join('')
 }
 
+function getBrowserLanguage(): Language {
+  return navigator.languages?.some((code) => code.toLowerCase().startsWith('sk')) ? 'sk' : 'en'
+}
+
+function normalizeLearningProgress(progress: LearningProgress | null, continent: ContinentCode): LearningProgress | null {
+  if (!progress || progress.continent !== continent || !progress.deckIds.length) return null
+
+  const countryIds = new Set(PLAYABLE_COUNTRIES.filter((country) => country.continent === continent).map((country) => country.iso))
+  if (progress.deckIds.some((id) => !countryIds.has(id))) return null
+
+  return {
+    continent: progress.continent,
+    deckIds: progress.deckIds,
+    roundIndex: clamp(progress.roundIndex, 0, progress.deckIds.length - 1),
+    phase: progress.phase,
+  }
+}
+
+function createLearningDeckFromIds(ids: string[]): GameItem[] {
+  const countriesById = new Map(PLAYABLE_COUNTRIES.map((country) => [country.iso, country]))
+  return ids
+    .map((id) => countriesById.get(id))
+    .filter((country): country is typeof PLAYABLE_COUNTRIES[number] => Boolean(country))
+    .map((country) => ({ ...country, mode: 'countries' }))
+}
+
+function buildLearningProgress(continent: ContinentCode, deck: GameItem[], roundIndex: number, phase: LearningProgress['phase']): LearningProgress | null {
+  const deckIds = deck.filter((item): item is GameItem & { mode: 'countries' } => item.mode === 'countries').map((item) => item.id)
+  return deckIds.length ? { continent, deckIds, roundIndex, phase } : null
+}
+
 function App() {
-  const [language, setLanguage] = useState<Language>('sk')
+  const [language, setLanguage] = usePersistentState<Language>('capital-rush-language', getBrowserLanguage())
   const [settings, setSettings] = usePersistentState<GameSettings>('capital-rush-settings', DEFAULT_SETTINGS)
   const [playMode, setPlayMode] = usePersistentState<PlayMode>('capital-rush-play-mode', 'quiz')
   const [learningContinent, setLearningContinent] = usePersistentState<ContinentCode>('capital-rush-learning-continent', 'EU')
+  const [learningProgress, setLearningProgress] = usePersistentState<LearningProgress | null>(LEARNING_PROGRESS_KEY, null)
   const [themeMode, setThemeMode] = usePersistentState<ThemeMode>('capital-rush-theme', 'auto')
   const [soundOn, setSoundOn] = useState(true)
-  const [phase, setPhase] = useState<Phase>('setup')
-  const [deck, setDeck] = useState<GameItem[]>([])
-  const [roundIndex, setRoundIndex] = useState(0)
+  const [initialLearningProgress] = useState(() => playMode === 'learn' ? normalizeLearningProgress(learningProgress, learningContinent) : null)
+  const [phase, setPhase] = useState<Phase>(() => initialLearningProgress?.phase ?? 'setup')
+  const [deck, setDeck] = useState<GameItem[]>(() => initialLearningProgress ? createLearningDeckFromIds(initialLearningProgress.deckIds) : [])
+  const [roundIndex, setRoundIndex] = useState(() => initialLearningProgress?.roundIndex ?? 0)
   const [score, setScore] = useState(0)
   const [streak, setStreak] = useState(0)
   const [bestStreak, setBestStreak] = useState(0)
@@ -480,6 +515,11 @@ function App() {
       cancelled = true
     }
   }, [countryFactsKey, language, target])
+
+  useEffect(() => {
+    if (!isLearning || !deck.length || (phase !== 'playing' && phase !== 'finished')) return
+    setLearningProgress(buildLearningProgress(learningContinent, deck, roundIndex, phase))
+  }, [deck, isLearning, learningContinent, phase, roundIndex, setLearningProgress])
 
   const resolveRound = useCallback((answerId: string | null, mode: RoundResolveMode = 'answer') => {
     if (!target || result || isLearning) return
@@ -633,6 +673,7 @@ function App() {
     setTimeLeft(secondsPerRound)
     setFlash('start')
     setPhase('playing')
+    if (isLearning) setLearningProgress(buildLearningProgress(learningContinent, newDeck, 0, 'playing'))
     playerRef.current('start')
   }
 
@@ -731,23 +772,29 @@ function App() {
     }
     if (roundIndex + 1 >= currentRoundLimit) {
       setPhase('finished')
+      setLearningProgress(buildLearningProgress(learningContinent, deck, roundIndex, 'finished'))
       return
     }
+    const nextIndex = roundIndex + 1
     setMapZoom(1)
     setMapPan({ x: 0, y: 0 })
-    setRoundIndex((value) => value + 1)
+    setRoundIndex(nextIndex)
+    setLearningProgress(buildLearningProgress(learningContinent, deck, nextIndex, 'playing'))
   }
 
   function previousLearningCountry() {
     if (!canGoPreviousLearningCountry) return
+    const previousIndex = roundIndex - 1
     setMapZoom(1)
     setMapPan({ x: 0, y: 0 })
-    setRoundIndex((value) => value - 1)
+    setRoundIndex(previousIndex)
+    setLearningProgress(buildLearningProgress(learningContinent, deck, previousIndex, 'playing'))
   }
 
   function clearGameState(nextSecondsPerRound = secondsPerRound) {
     setPhase('setup')
     resetMapView()
+    setLearningProgress(null)
     setDeck([])
     setRoundIndex(0)
     setScore(0)
