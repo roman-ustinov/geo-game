@@ -1,12 +1,15 @@
-import { type CSSProperties, type ChangeEvent, type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type ChangeEvent, type FormEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { geoEqualEarth, geoPath } from 'd3-geo'
 import {
   BookOpen,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Crosshair,
   LogOut,
   MapPinned,
+  Maximize2,
   Minus,
   Monitor,
   Moon,
@@ -69,6 +72,7 @@ type ActiveDialog = 'settings' | 'auth' | 'profile' | null
 type AuthMode = 'login' | 'register'
 type ThemeMode = 'auto' | 'light' | 'dark'
 type PlayMode = 'quiz' | 'learn'
+type MapSize = 'normal' | 'large' | 'full'
 type RoundResolveMode = 'answer' | 'timeout'
 type AudioCue = 'start' | 'correct' | 'wrong' | 'timeout'
 type AudioPlayer = (type: AudioCue) => void
@@ -212,10 +216,8 @@ const GAME_MODE_META: GameModeMeta = {
 }
 
 function TargetName({ name }: { name: string }) {
-  const fontSize = Math.max(24, Math.min(44, Math.floor(320 / (name.length * 0.58))))
-
   return (
-    <strong className="capital-name" style={{ '--capital-font-size': `${fontSize}px` } as CssVars}>
+    <strong className="capital-name">
       {name}
     </strong>
   )
@@ -340,6 +342,10 @@ function App() {
   const [streak, setStreak] = useState(0)
   const [bestStreak, setBestStreak] = useState(0)
   const [mapZoom, setMapZoom] = useState(1)
+  const [mapPan, setMapPan] = useState({ x: 0, y: 0 })
+  const [modesCollapsed, setModesCollapsed] = useState(false)
+  const [mapSide, setMapSide] = useState<'right' | 'left'>('right')
+  const [mapSize, setMapSize] = useState<MapSize>('normal')
   const [timeLeft, setTimeLeft] = useState(settings.secondsPerRound)
   const [result, setResult] = useState<RoundResult | null>(null)
   const [selectedAnswerId, setSelectedAnswerId] = useState<string | null>(null)
@@ -363,6 +369,7 @@ function App() {
   const roundStartedAtRef = useRef<number | null>(null)
   const roundDetailsRef = useRef<RoundDetail[]>([])
   const playerRef = useRef<AudioPlayer>(() => {})
+  const mapDragRef = useRef({ active: false, pointerId: 0, x: 0, y: 0, panX: 0, panY: 0, viewWidth: WIDTH, viewHeight: HEIGHT, moved: false })
   const t = loadTranslations(language)
 
   const normalizedSettings = useMemo(() => ({
@@ -423,21 +430,36 @@ function App() {
     return `${x.toFixed(1)} ${y.toFixed(1)} ${viewWidth.toFixed(1)} ${viewHeight.toFixed(1)}`
   }, [isLearning, phase, target])
   const mapViewBox = useMemo(() => {
+    let nextX = 0
+    let nextY = 0
+    let nextWidth = WIDTH
+    let nextHeight = HEIGHT
+
     if (mapZoom === 0) return `0 0 ${WIDTH} ${HEIGHT}`
 
     const [x, y, width, height] = baseMapViewBox.split(' ').map(Number)
     if (mapZoom < 1) {
-      const zoomedWidth = WIDTH - (WIDTH - width) * mapZoom
-      const zoomedHeight = HEIGHT - (HEIGHT - height) * mapZoom
+      nextWidth = WIDTH - (WIDTH - width) * mapZoom
+      nextHeight = HEIGHT - (HEIGHT - height) * mapZoom
       const center = { x: x + width / 2, y: y + height / 2 }
-      return `${clamp(center.x - zoomedWidth / 2, 0, WIDTH - zoomedWidth).toFixed(1)} ${clamp(center.y - zoomedHeight / 2, 0, HEIGHT - zoomedHeight).toFixed(1)} ${zoomedWidth.toFixed(1)} ${zoomedHeight.toFixed(1)}`
+      nextX = center.x - nextWidth / 2
+      nextY = center.y - nextHeight / 2
+    } else {
+      nextWidth = width / mapZoom
+      nextHeight = height / mapZoom
+      nextX = x + (width - nextWidth) / 2
+      nextY = y + (height - nextHeight) / 2
     }
 
-    const zoomedWidth = width / mapZoom
-    const zoomedHeight = height / mapZoom
-    return `${clamp(x + (width - zoomedWidth) / 2, 0, WIDTH - zoomedWidth).toFixed(1)} ${clamp(y + (height - zoomedHeight) / 2, 0, HEIGHT - zoomedHeight).toFixed(1)} ${zoomedWidth.toFixed(1)} ${zoomedHeight.toFixed(1)}`
-  }, [baseMapViewBox, mapZoom])
+    nextX = clamp(nextX + mapPan.x, 0, WIDTH - nextWidth)
+    nextY = clamp(nextY + mapPan.y, 0, HEIGHT - nextHeight)
+    return `${nextX.toFixed(1)} ${nextY.toFixed(1)} ${nextWidth.toFixed(1)} ${nextHeight.toFixed(1)}`
+  }, [baseMapViewBox, mapPan, mapZoom])
   const capitalMarkerRadius = (Number(mapViewBox.split(' ')[2]) || WIDTH) / 260
+
+  useEffect(() => {
+    setMapPan({ x: 0, y: 0 })
+  }, [target?.id])
 
   useEffect(() => {
     if (!isLearning || phase === 'setup' || target?.mode !== 'countries' || !target.alpha2) {
@@ -622,6 +644,44 @@ function App() {
       const index = MAP_ZOOM_STEPS.findIndex((step) => step >= value)
       return MAP_ZOOM_STEPS[clamp((index === -1 ? MAP_ZOOM_STEPS.length - 1 : index) + direction, 0, MAP_ZOOM_STEPS.length - 1)]
     })
+  }
+
+  function dragMap(event: ReactPointerEvent<SVGSVGElement>) {
+    const drag = mapDragRef.current
+    if (!drag.active || event.pointerId !== drag.pointerId || event.buttons !== 1) return
+
+    const rect = event.currentTarget.getBoundingClientRect()
+    const deltaX = event.clientX - drag.x
+    const deltaY = event.clientY - drag.y
+    if (Math.abs(deltaX) > 4 || Math.abs(deltaY) > 4) drag.moved = true
+    setMapPan({
+      x: drag.panX - deltaX * (drag.viewWidth / rect.width),
+      y: drag.panY - deltaY * (drag.viewHeight / rect.height),
+    })
+  }
+
+  function startMapDrag(event: ReactPointerEvent<SVGSVGElement>) {
+    if (event.button !== 0) return
+    const [, , viewWidth, viewHeight] = mapViewBox.split(' ').map(Number)
+    mapDragRef.current = { active: true, pointerId: event.pointerId, x: event.clientX, y: event.clientY, panX: mapPan.x, panY: mapPan.y, viewWidth, viewHeight, moved: false }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  function stopMapDrag(event: ReactPointerEvent<SVGSVGElement>) {
+    const drag = mapDragRef.current
+    if (event.pointerId !== drag.pointerId) return
+    drag.active = false
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    window.setTimeout(() => {
+      drag.moved = false
+    })
+  }
+
+  function zoomMapWithWheel(event: ReactWheelEvent<SVGSVGElement>) {
+    event.preventDefault()
+    zoomMap(event.deltaY > 0 ? -1 : 1)
   }
 
   function nextLearningCountry() {
@@ -844,37 +904,48 @@ function App() {
         </div>
       </section>
 
-      <section className="mode-band" aria-label={t.gameMode}>
-        <div className="mode-choice-grid main-mode-grid" role="radiogroup" aria-label={t.gameMode}>
-          {GAME_MODES.map((mode) => {
-            const ChoiceIcon = GAME_MODE_META[mode].icon
-            const isActive = playMode === 'quiz' && configuredGameMode === mode
+      <section className={`mode-band ${modesCollapsed ? 'is-collapsed' : ''}`} aria-label={t.gameMode}>
+        <button
+          className="mode-band-toggle"
+          type="button"
+          onClick={() => setModesCollapsed((value) => !value)}
+          aria-expanded={!modesCollapsed}
+        >
+          <span>{t.gameMode}</span>
+          {modesCollapsed ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
+        </button>
+        {!modesCollapsed && (
+          <div className="mode-choice-grid main-mode-grid" role="radiogroup" aria-label={t.gameMode}>
+            {GAME_MODES.map((mode) => {
+              const ChoiceIcon = GAME_MODE_META[mode].icon
+              const isActive = playMode === 'quiz' && configuredGameMode === mode
 
-            return (
-              <button
-                className={isActive ? 'mode-choice-button active' : 'mode-choice-button'}
-                type="button"
-                role="radio"
-                aria-checked={isActive}
-                key={mode}
-                onClick={() => changeGameMode(mode)}
-              >
-                <ChoiceIcon size={18} />
-                <span>{t[GAME_MODE_META[mode].labelKey]}</span>
-              </button>
-            )
-          })}
-          <button
-            className={isLearning ? 'mode-choice-button active' : 'mode-choice-button'}
-            type="button"
-            role="radio"
-            aria-checked={isLearning}
-            onClick={() => changeLearningContinent(learningContinent)}
-          >
-            <BookOpen size={18} />
-            <span>{t.modeLearning}</span>
-          </button>
-        </div>
+              return (
+                <button
+                  className={isActive ? 'mode-choice-button active' : 'mode-choice-button'}
+                  type="button"
+                  role="radio"
+                  aria-checked={isActive}
+                  key={mode}
+                  onClick={() => changeGameMode(mode)}
+                >
+                  <ChoiceIcon size={18} />
+                  <span>{t[GAME_MODE_META[mode].labelKey]}</span>
+                </button>
+              )
+            })}
+            <button
+              className={isLearning ? 'mode-choice-button active' : 'mode-choice-button'}
+              type="button"
+              role="radio"
+              aria-checked={isLearning}
+              onClick={() => changeLearningContinent(learningContinent)}
+            >
+              <BookOpen size={18} />
+              <span>{t.modeLearning}</span>
+            </button>
+          </div>
+        )}
       </section>
 
       <section className="control-band" aria-label={t.setup}>
@@ -924,7 +995,7 @@ function App() {
         )}
       </section>
 
-      <section className="play-area">
+      <section className={`play-area map-${mapSide} map-${mapSize}`}>
         <div className="prompt-panel">
           <div className="prompt-topline">
             <span><Crosshair size={16} /> {isLearning ? t.learningMode : t[modeMeta.promptKey]}</span>
@@ -998,11 +1069,39 @@ function App() {
         </div>
 
         <div className="map-panel">
+          <div className="panel-toolbar" aria-label={t.mapLayout}>
+            <button className="mini-icon-button" type="button" onClick={() => setMapSide('left')} disabled={mapSide === 'left'} aria-label={t.moveMapLeft} title={t.moveMapLeft}>
+              <ChevronLeft size={16} />
+            </button>
+            <button className="mini-icon-button" type="button" onClick={() => setMapSide('right')} disabled={mapSide === 'right'} aria-label={t.moveMapRight} title={t.moveMapRight}>
+              <ChevronRight size={16} />
+            </button>
+            <button className="mini-icon-button" type="button" onClick={() => setMapSize('normal')} disabled={mapSize === 'normal'} aria-label={t.shrinkMap} title={t.shrinkMap}>
+              <Minus size={16} />
+            </button>
+            <button className="mini-icon-button" type="button" onClick={() => setMapSize('large')} disabled={mapSize === 'large'} aria-label={t.enlargeMap} title={t.enlargeMap}>
+              <Plus size={16} />
+            </button>
+            <button className="mini-icon-button" type="button" onClick={() => setMapSize('full')} disabled={mapSize === 'full'} aria-label={t.fullWidthMap} title={t.fullWidthMap}>
+              <Maximize2 size={16} />
+            </button>
+          </div>
           <div className="progress-track" aria-hidden="true">
             <span style={{ width: `${progress}%` }} />
           </div>
           <div className="map-frame">
-            <svg className="world-map" viewBox={mapViewBox} role="img" aria-label={t.mapLabel}>
+            <svg
+              className="world-map"
+              viewBox={mapViewBox}
+              role="img"
+              aria-label={t.mapLabel}
+              onPointerDown={startMapDrag}
+              onPointerMove={dragMap}
+              onPointerUp={stopMapDrag}
+              onPointerCancel={stopMapDrag}
+              onPointerLeave={stopMapDrag}
+              onWheel={zoomMapWithWheel}
+            >
               <defs>
                 <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
                   <path d="M 50 0 L 0 0 0 50" fill="none" />
@@ -1019,7 +1118,7 @@ function App() {
                     data-iso={country.mapId ?? undefined}
                     className={mapCountryClass(country)}
                     d={PATH(country) ?? undefined}
-                    onClick={() => activeGameMode === 'countries' && !isLearning && phase === 'playing' && !result && country.mapId && resolveRound(country.mapId)}
+                    onClick={() => !mapDragRef.current.moved && activeGameMode === 'countries' && !isLearning && phase === 'playing' && !result && country.mapId && resolveRound(country.mapId)}
                   >
                     <title>{activeGameMode === 'countries' && !isLearning && phase === 'playing' && !result ? t.selectCountry : getCountryDisplayName(country.mapId, language)}</title>
                   </path>
@@ -1052,7 +1151,7 @@ function App() {
                               cy={projected.cy}
                               rx={projected.rx}
                               ry={projected.ry}
-                              onClick={() => phase === 'playing' && !result && resolveRound(feature.id)}
+                              onClick={() => !mapDragRef.current.moved && phase === 'playing' && !result && resolveRound(feature.id)}
                             >
                               <title>{phase === 'playing' && !result ? t[modeMeta.selectTitleKey] : getWaterFeatureDisplayName(feature, language)}</title>
                             </ellipse>
@@ -1070,7 +1169,7 @@ function App() {
                               data-feature-id={feature.id}
                               points={points}
                               style={{ '--feature-line-width': feature.lineWidth ?? 9 } as CssVars}
-                              onClick={() => phase === 'playing' && !result && resolveRound(feature.id)}
+                              onClick={() => !mapDragRef.current.moved && phase === 'playing' && !result && resolveRound(feature.id)}
                             >
                               <title>{phase === 'playing' && !result ? t[modeMeta.selectTitleKey] : getWaterFeatureDisplayName(feature, language)}</title>
                             </polyline>

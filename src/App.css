@@ -155,6 +155,29 @@
   box-shadow: 0 16px 34px rgba(30, 36, 44, 0.08);
 }
 
+.mode-band.is-collapsed {
+  padding-block: 8px;
+}
+
+.mode-band-toggle {
+  width: 100%;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 0;
+  color: #25313d;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 850;
+}
+
+.mode-band-toggle + .mode-choice-grid {
+  margin-top: 10px;
+}
+
 .mode-choice-button {
   box-sizing: border-box;
   width: 100%;
@@ -366,6 +389,34 @@
   margin-top: 16px;
 }
 
+.play-area.map-large {
+  grid-template-columns: minmax(250px, 310px) minmax(0, 1.4fr);
+}
+
+.play-area.map-full {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.play-area.map-left .map-panel {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.play-area.map-left .prompt-panel {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.play-area.map-full .map-panel {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+.play-area.map-full .prompt-panel {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
 .prompt-panel,
 .map-panel {
   border: 1px solid rgba(21, 32, 43, 0.1);
@@ -439,7 +490,7 @@
   padding: 6px 0 8px;
   border-bottom: 3px solid rgba(244, 170, 64, 0.72);
   color: #fff8ed;
-  font-size: var(--capital-font-size, 44px);
+  font-size: 34px;
   font-weight: 950;
   line-height: 1;
   letter-spacing: 0;
@@ -610,6 +661,30 @@
     rgba(255, 255, 255, 0.72);
 }
 
+.panel-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.mini-icon-button {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(21, 32, 43, 0.12);
+  border-radius: 8px;
+  color: #15202b;
+  background: rgba(255, 250, 240, 0.88);
+  cursor: pointer;
+}
+
+.mini-icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
 .progress-track {
   height: 8px;
   overflow: hidden;
@@ -636,10 +711,16 @@
   height: auto;
   aspect-ratio: 1200 / 620;
   display: block;
+  cursor: grab;
+  touch-action: none;
   border-radius: 8px;
   background:
     radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.22), transparent 62%),
     #d8e8e9;
+}
+
+.world-map:active {
+  cursor: grabbing;
 }
 
 .map-zoom-controls {
@@ -1447,6 +1528,12 @@ pattern path {
 
   .play-area {
     gap: 12px;
+  }
+
+  .play-area.map-left .map-panel,
+  .play-area.map-left .prompt-panel {
+    grid-column: auto;
+    grid-row: auto;
   }
 
   .map-panel {
