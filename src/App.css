@@ -1394,6 +1394,20 @@ pattern path {
   background: #151b20;
 }
 
+[data-theme="dark"] .country-facts {
+  background: #172127;
+}
+
+[data-theme="dark"] .country-facts h3,
+[data-theme="dark"] .country-facts dd,
+[data-theme="dark"] .country-facts p {
+  color: #f4f7f7;
+}
+
+[data-theme="dark"] .country-facts dt {
+  color: #9fb0b8;
+}
+
 [data-theme="dark"] .result-line {
   color: #e3eaeb;
   background: #1d252b;
