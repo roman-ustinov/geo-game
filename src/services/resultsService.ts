@@ -5,10 +5,14 @@ const RESULTS_KEY = 'capital-rush-results'
 const GUEST_KEY = 'capital-rush-guest-id'
 
 export function getGuestId(): string {
-  const existing = window.localStorage.getItem(GUEST_KEY)
-  if (existing) return existing
   const guestId = `guest-${crypto.randomUUID()}`
-  window.localStorage.setItem(GUEST_KEY, guestId)
+  try {
+    const existing = window.localStorage.getItem(GUEST_KEY)
+    if (existing) return existing
+    window.localStorage.setItem(GUEST_KEY, guestId)
+  } catch {
+    // ponytail: storage may be unavailable in private/locked-down browsers.
+  }
   return guestId
 }
 

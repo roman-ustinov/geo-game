@@ -103,10 +103,19 @@ SELECT ?description ?nativeName ?capitalLabel ?largestCityLabel ?officialLanguag
 }
 LIMIT 500`
   const url = `https://query.wikidata.org/sparql?format=json&query=${encodeURIComponent(query)}`
-  const response = await fetch(url)
-  if (!response.ok) return []
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 8000)
+  let data: { results?: { bindings?: Array<Record<string, { value: string }>> } }
+  try {
+    const response = await fetch(url, { signal: controller.signal })
+    if (!response.ok) return []
+    data = await response.json() as { results?: { bindings?: Array<Record<string, { value: string }>> } }
+  } catch {
+    return []
+  } finally {
+    window.clearTimeout(timeout)
+  }
 
-  const data = await response.json() as { results?: { bindings?: Array<Record<string, { value: string }>> } }
   const rows = data.results?.bindings ?? []
   const get = (key: string) => unique(rows.map((row) => row[key]?.value))
   const first = (key: string) => rows.find((row) => row[key]?.value)?.[key]?.value

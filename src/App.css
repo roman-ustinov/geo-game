@@ -723,6 +723,26 @@
   cursor: grabbing;
 }
 
+.world-map:focus-visible {
+  outline: 3px solid rgba(12, 119, 125, 0.36);
+  outline-offset: 3px;
+}
+
+.map-tooltip {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  max-width: 240px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  color: #fffaf0;
+  background: rgba(17, 24, 32, 0.9);
+  box-shadow: 0 10px 24px rgba(30, 36, 44, 0.18);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
 .map-zoom-controls {
   position: absolute;
   right: 22px;
@@ -853,17 +873,10 @@ pattern path {
   pointer-events: none;
 }
 
-.capital-marker circle:first-child {
+.capital-marker circle {
   fill: #d3562f;
   stroke: #fffaf0;
   stroke-width: 2.4;
-  vector-effect: non-scaling-stroke;
-}
-
-.capital-marker circle:last-child {
-  fill: none;
-  stroke: rgba(211, 86, 47, 0.42);
-  stroke-width: 3;
   vector-effect: non-scaling-stroke;
 }
 

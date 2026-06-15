@@ -1,4 +1,4 @@
-import { type CSSProperties, type ChangeEvent, type FormEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type ChangeEvent, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { geoEqualEarth, geoPath } from 'd3-geo'
 import {
   BookOpen,
@@ -78,6 +78,7 @@ type AudioCue = 'start' | 'correct' | 'wrong' | 'timeout'
 type AudioPlayer = (type: AudioCue) => void
 type RoundResult = { type: Exclude<AudioCue, 'start'>; correctAnswer: string }
 type CssVars = CSSProperties & Record<`--${string}`, string | number>
+type MapTooltip = { text: string; x: number; y: number } | null
 const CONTINENTS: ContinentCode[] = ['EU', 'AS', 'AF', 'NA', 'SA', 'OC']
 const MAP_ZOOM_STEPS = [0, 0.4, 0.7, 1, 1.25, 1.5, 1.75, 2]
 
@@ -94,7 +95,14 @@ type GameModeMeta = Record<GameMode, {
 }>
 
 function shuffle<T>(list: readonly T[]): T[] {
-  return [...list].sort(() => Math.random() - 0.5)
+  const shuffled = [...list]
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1))
+    const item = shuffled[index]
+    shuffled[index] = shuffled[swapIndex]
+    shuffled[swapIndex] = item
+  }
+  return shuffled
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -346,6 +354,7 @@ function App() {
   const [modesCollapsed, setModesCollapsed] = useState(false)
   const [mapSide, setMapSide] = useState<'right' | 'left'>('right')
   const [mapSize, setMapSize] = useState<MapSize>('normal')
+  const [mapTooltip, setMapTooltip] = useState<MapTooltip>(null)
   const [timeLeft, setTimeLeft] = useState(settings.secondsPerRound)
   const [result, setResult] = useState<RoundResult | null>(null)
   const [selectedAnswerId, setSelectedAnswerId] = useState<string | null>(null)
@@ -363,8 +372,7 @@ function App() {
   const [authLoading, setAuthLoading] = useState(false)
   const [profileRefresh, setProfileRefresh] = useState(0)
   const [newAchievements, setNewAchievements] = useState<EarnedAchievement[]>([])
-  const [countryFacts, setCountryFacts] = useState<CountryFact[]>([])
-  const [countryFactsLoading, setCountryFactsLoading] = useState(false)
+  const [countryFactsResult, setCountryFactsResult] = useState<{ key: string; facts: CountryFact[] } | null>(null)
   const [gameStartedAt, setGameStartedAt] = useState<string | null>(null)
   const roundStartedAtRef = useRef<number | null>(null)
   const roundDetailsRef = useRef<RoundDetail[]>([])
@@ -430,58 +438,48 @@ function App() {
     return `${x.toFixed(1)} ${y.toFixed(1)} ${viewWidth.toFixed(1)} ${viewHeight.toFixed(1)}`
   }, [isLearning, phase, target])
   const mapViewBox = useMemo(() => {
-    let nextX = 0
-    let nextY = 0
-    let nextWidth = WIDTH
-    let nextHeight = HEIGHT
-
     if (mapZoom === 0) return `0 0 ${WIDTH} ${HEIGHT}`
 
     const [x, y, width, height] = baseMapViewBox.split(' ').map(Number)
+    let view
     if (mapZoom < 1) {
-      nextWidth = WIDTH - (WIDTH - width) * mapZoom
-      nextHeight = HEIGHT - (HEIGHT - height) * mapZoom
+      const nextWidth = WIDTH - (WIDTH - width) * mapZoom
+      const nextHeight = HEIGHT - (HEIGHT - height) * mapZoom
       const center = { x: x + width / 2, y: y + height / 2 }
-      nextX = center.x - nextWidth / 2
-      nextY = center.y - nextHeight / 2
+      view = { x: center.x - nextWidth / 2, y: center.y - nextHeight / 2, width: nextWidth, height: nextHeight }
     } else {
-      nextWidth = width / mapZoom
-      nextHeight = height / mapZoom
-      nextX = x + (width - nextWidth) / 2
-      nextY = y + (height - nextHeight) / 2
+      const nextWidth = width / mapZoom
+      const nextHeight = height / mapZoom
+      view = { x: x + (width - nextWidth) / 2, y: y + (height - nextHeight) / 2, width: nextWidth, height: nextHeight }
     }
 
-    nextX = clamp(nextX + mapPan.x, 0, WIDTH - nextWidth)
-    nextY = clamp(nextY + mapPan.y, 0, HEIGHT - nextHeight)
-    return `${nextX.toFixed(1)} ${nextY.toFixed(1)} ${nextWidth.toFixed(1)} ${nextHeight.toFixed(1)}`
+    const nextX = clamp(view.x + mapPan.x, 0, WIDTH - view.width)
+    const nextY = clamp(view.y + mapPan.y, 0, HEIGHT - view.height)
+    return `${nextX.toFixed(1)} ${nextY.toFixed(1)} ${view.width.toFixed(1)} ${view.height.toFixed(1)}`
   }, [baseMapViewBox, mapPan, mapZoom])
   const capitalMarkerRadius = (Number(mapViewBox.split(' ')[2]) || WIDTH) / 260
+  const mapZoomStepIndex = MAP_ZOOM_STEPS.findIndex((step) => step >= mapZoom)
+  const canZoomOut = mapZoomStepIndex > 0
+  const canZoomIn = mapZoomStepIndex !== -1 && mapZoomStepIndex < MAP_ZOOM_STEPS.length - 1
+  const countryFactsKey = isLearning && phase !== 'setup' && target?.mode === 'countries' && target.alpha2
+    ? `${language}:${target.alpha2}`
+    : null
+  const countryFacts = countryFactsKey && countryFactsResult?.key === countryFactsKey ? countryFactsResult.facts : []
+  const countryFactsLoading = Boolean(countryFactsKey && countryFactsResult?.key !== countryFactsKey)
 
   useEffect(() => {
-    setMapPan({ x: 0, y: 0 })
-  }, [target?.id])
-
-  useEffect(() => {
-    if (!isLearning || phase === 'setup' || target?.mode !== 'countries' || !target.alpha2) {
-      setCountryFacts([])
-      setCountryFactsLoading(false)
-      return
-    }
+    if (!countryFactsKey || target?.mode !== 'countries' || !target.alpha2) return undefined
 
     let cancelled = false
-    setCountryFactsLoading(true)
     getCountryFacts(target.alpha2, language)
       .then((facts) => {
-        if (!cancelled) setCountryFacts(facts)
-      })
-      .finally(() => {
-        if (!cancelled) setCountryFactsLoading(false)
+        if (!cancelled) setCountryFactsResult({ key: countryFactsKey, facts })
       })
 
     return () => {
       cancelled = true
     }
-  }, [isLearning, language, phase, target])
+  }, [countryFactsKey, language, target])
 
   const resolveRound = useCallback((answerId: string | null, mode: RoundResolveMode = 'answer') => {
     if (!target || result || isLearning) return
@@ -601,6 +599,8 @@ function App() {
         finishGame(roundDetailsRef.current)
         setPhase('finished')
       } else {
+        setMapZoom(1)
+        setMapPan({ x: 0, y: 0 })
         setRoundIndex((value) => value + 1)
         setTimeLeft(secondsPerRound)
         setSelectedAnswerId(null)
@@ -619,6 +619,7 @@ function App() {
       ? buildRoundDeck(createCountryItems(learningCountries), learningCountries.length)
       : buildRoundDeck(createGameItems(configuredGameMode), roundLimit)
     setMapZoom(1)
+    setMapPan({ x: 0, y: 0 })
     setDeck(newDeck)
     setRoundIndex(0)
     setScore(0)
@@ -646,6 +647,44 @@ function App() {
     })
   }
 
+  function resetMapView() {
+    setMapZoom(1)
+    setMapPan({ x: 0, y: 0 })
+  }
+
+  function panMap(deltaX: number, deltaY: number) {
+    const [, , viewWidth, viewHeight] = mapViewBox.split(' ').map(Number)
+    setMapPan((value) => ({
+      x: value.x + deltaX * viewWidth,
+      y: value.y + deltaY * viewHeight,
+    }))
+  }
+
+  function controlMapWithKeyboard(event: ReactKeyboardEvent<SVGSVGElement>) {
+    if (event.key === '+' || event.key === '=') {
+      event.preventDefault()
+      zoomMap(1)
+    } else if (event.key === '-') {
+      event.preventDefault()
+      zoomMap(-1)
+    } else if (event.key === '0') {
+      event.preventDefault()
+      resetMapView()
+    } else if (event.key === 'ArrowLeft') {
+      event.preventDefault()
+      panMap(-0.08, 0)
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault()
+      panMap(0.08, 0)
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      panMap(0, -0.08)
+    } else if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      panMap(0, 0.08)
+    }
+  }
+
   function dragMap(event: ReactPointerEvent<SVGSVGElement>) {
     const drag = mapDragRef.current
     if (!drag.active || event.pointerId !== drag.pointerId || event.buttons !== 1) return
@@ -662,6 +701,7 @@ function App() {
 
   function startMapDrag(event: ReactPointerEvent<SVGSVGElement>) {
     if (event.button !== 0) return
+    setMapTooltip(null)
     const [, , viewWidth, viewHeight] = mapViewBox.split(' ').map(Number)
     mapDragRef.current = { active: true, pointerId: event.pointerId, x: event.clientX, y: event.clientY, panX: mapPan.x, panY: mapPan.y, viewWidth, viewHeight, moved: false }
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -694,17 +734,20 @@ function App() {
       return
     }
     setMapZoom(1)
+    setMapPan({ x: 0, y: 0 })
     setRoundIndex((value) => value + 1)
   }
 
   function previousLearningCountry() {
     if (!canGoPreviousLearningCountry) return
     setMapZoom(1)
+    setMapPan({ x: 0, y: 0 })
     setRoundIndex((value) => value - 1)
   }
 
   function clearGameState(nextSecondsPerRound = secondsPerRound) {
     setPhase('setup')
+    resetMapView()
     setDeck([])
     setRoundIndex(0)
     setScore(0)
@@ -834,6 +877,23 @@ function App() {
 
   function mapCountryClass(country: CountryFeature): string {
     return answerClass(country.mapId, ['country-shape', activeGameMode !== 'countries' ? 'is-background' : ''])
+  }
+
+  function getMapCountryLabel(country: CountryFeature): string {
+    return activeGameMode === 'countries' && !isLearning && phase === 'playing' && !result
+      ? t.selectCountry
+      : getCountryDisplayName(country.mapId, language)
+  }
+
+  function showMapTooltip(event: ReactPointerEvent<SVGElement>, text: string) {
+    if (mapDragRef.current.active) return
+    const rect = event.currentTarget.ownerSVGElement?.getBoundingClientRect()
+    if (!rect) return
+    setMapTooltip({
+      text,
+      x: event.clientX - rect.left + 12,
+      y: event.clientY - rect.top + 12,
+    })
   }
 
   function mapWaterClass(feature: WaterFeature): string {
@@ -1069,7 +1129,7 @@ function App() {
         </div>
 
         <div className="map-panel">
-          <div className="panel-toolbar" aria-label={t.mapLayout}>
+          <div className="panel-toolbar" role="toolbar" aria-label={t.mapLayout}>
             <button className="mini-icon-button" type="button" onClick={() => setMapSide('left')} disabled={mapSide === 'left'} aria-label={t.moveMapLeft} title={t.moveMapLeft}>
               <ChevronLeft size={16} />
             </button>
@@ -1089,17 +1149,24 @@ function App() {
           <div className="progress-track" aria-hidden="true">
             <span style={{ width: `${progress}%` }} />
           </div>
+          <p id="map-keyboard-help" className="sr-only">{t.mapKeyboardHelp}</p>
           <div className="map-frame">
             <svg
               className="world-map"
               viewBox={mapViewBox}
               role="img"
               aria-label={t.mapLabel}
+              aria-describedby="map-keyboard-help"
+              tabIndex={0}
+              onKeyDown={controlMapWithKeyboard}
               onPointerDown={startMapDrag}
               onPointerMove={dragMap}
               onPointerUp={stopMapDrag}
               onPointerCancel={stopMapDrag}
-              onPointerLeave={stopMapDrag}
+              onPointerLeave={(event) => {
+                setMapTooltip(null)
+                stopMapDrag(event)
+              }}
               onWheel={zoomMapWithWheel}
             >
               <defs>
@@ -1118,9 +1185,12 @@ function App() {
                     data-iso={country.mapId ?? undefined}
                     className={mapCountryClass(country)}
                     d={PATH(country) ?? undefined}
+                    onPointerEnter={(event) => showMapTooltip(event, getMapCountryLabel(country))}
+                    onPointerMove={(event) => showMapTooltip(event, getMapCountryLabel(country))}
+                    onPointerLeave={() => setMapTooltip(null)}
                     onClick={() => !mapDragRef.current.moved && activeGameMode === 'countries' && !isLearning && phase === 'playing' && !result && country.mapId && resolveRound(country.mapId)}
                   >
-                    <title>{activeGameMode === 'countries' && !isLearning && phase === 'playing' && !result ? t.selectCountry : getCountryDisplayName(country.mapId, language)}</title>
+                    <title>{getMapCountryLabel(country)}</title>
                   </path>
                 ))}
               </g>
@@ -1130,7 +1200,6 @@ function App() {
               {isLearning && phase !== 'setup' && capitalPoint && (
                 <g className="capital-marker" aria-label={learningCapital ?? undefined}>
                   <circle cx={capitalPoint[0]} cy={capitalPoint[1]} r={capitalMarkerRadius} />
-                  <circle cx={capitalPoint[0]} cy={capitalPoint[1]} r={capitalMarkerRadius * 2.35} />
                 </g>
               )}
 
@@ -1182,11 +1251,13 @@ function App() {
               )}
             </svg>
 
-            <div className="map-zoom-controls" aria-label="Zoom mapy">
-              <button type="button" onClick={() => zoomMap(-1)} aria-label="Oddialiť mapu" title="Oddialiť mapu">
+            {mapTooltip && <div className="map-tooltip" style={{ left: mapTooltip.x, top: mapTooltip.y }}>{mapTooltip.text}</div>}
+
+            <div className="map-zoom-controls" role="toolbar" aria-label={t.zoomMap}>
+              <button type="button" onClick={() => zoomMap(-1)} disabled={!canZoomOut} aria-label={t.zoomOutMap} title={t.zoomOutMap}>
                 <Minus size={18} />
               </button>
-              <button type="button" onClick={() => zoomMap(1)} aria-label="Priblížiť mapu" title="Priblížiť mapu">
+              <button type="button" onClick={() => zoomMap(1)} disabled={!canZoomIn} aria-label={t.zoomInMap} title={t.zoomInMap}>
                 <Plus size={18} />
               </button>
             </div>
