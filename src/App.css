@@ -824,6 +824,16 @@ pattern path {
   transform-origin: center;
 }
 
+.country-hit-area {
+  fill: none;
+  pointer-events: stroke;
+  stroke: transparent;
+  stroke-linejoin: round;
+  stroke-width: 12;
+  vector-effect: non-scaling-stroke;
+  cursor: pointer;
+}
+
 .country-shape:hover {
   fill: #94b9aa;
   filter: drop-shadow(0 8px 8px rgba(21, 32, 43, 0.12));

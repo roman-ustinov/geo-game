@@ -74,6 +74,7 @@ type ThemeMode = 'auto' | 'light' | 'dark'
 type PlayMode = 'quiz' | 'learn'
 type MapSize = 'normal' | 'large' | 'full'
 type LearningProgress = { continent: ContinentCode; deckIds: string[]; roundIndex: number; phase: 'playing' | 'finished' }
+type MapSelection = { id: string; mode: GameMode } | null
 type RoundResolveMode = 'answer' | 'timeout'
 type AudioCue = 'start' | 'correct' | 'wrong' | 'timeout'
 type AudioPlayer = (type: AudioCue) => void
@@ -412,7 +413,18 @@ function App() {
   const roundStartedAtRef = useRef<number | null>(null)
   const roundDetailsRef = useRef<RoundDetail[]>([])
   const playerRef = useRef<AudioPlayer>(() => {})
-  const mapDragRef = useRef({ active: false, pointerId: 0, x: 0, y: 0, panX: 0, panY: 0, viewWidth: WIDTH, viewHeight: HEIGHT, moved: false })
+  const mapDragRef = useRef<{ active: boolean; pointerId: number; x: number; y: number; panX: number; panY: number; viewWidth: number; viewHeight: number; moved: boolean; selection: MapSelection }>({
+    active: false,
+    pointerId: 0,
+    x: 0,
+    y: 0,
+    panX: 0,
+    panY: 0,
+    viewWidth: WIDTH,
+    viewHeight: HEIGHT,
+    moved: false,
+    selection: null,
+  })
   const t = loadTranslations(language)
 
   const normalizedSettings = useMemo(() => ({
@@ -733,7 +745,7 @@ function App() {
     const rect = event.currentTarget.getBoundingClientRect()
     const deltaX = event.clientX - drag.x
     const deltaY = event.clientY - drag.y
-    if (Math.abs(deltaX) > 4 || Math.abs(deltaY) > 4) drag.moved = true
+    if (Math.hypot(deltaX, deltaY) > 8) drag.moved = true
     setMapPan({
       x: drag.panX - deltaX * (drag.viewWidth / rect.width),
       y: drag.panY - deltaY * (drag.viewHeight / rect.height),
@@ -744,7 +756,18 @@ function App() {
     if (event.button !== 0) return
     setMapTooltip(null)
     const [, , viewWidth, viewHeight] = mapViewBox.split(' ').map(Number)
-    mapDragRef.current = { active: true, pointerId: event.pointerId, x: event.clientX, y: event.clientY, panX: mapPan.x, panY: mapPan.y, viewWidth, viewHeight, moved: false }
+    mapDragRef.current = {
+      active: true,
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      panX: mapPan.x,
+      panY: mapPan.y,
+      viewWidth,
+      viewHeight,
+      moved: false,
+      selection: getMapSelectionFromTarget(event.target),
+    }
     event.currentTarget.setPointerCapture(event.pointerId)
   }
 
@@ -752,17 +775,36 @@ function App() {
     const drag = mapDragRef.current
     if (event.pointerId !== drag.pointerId) return
     drag.active = false
+    const releaseSelection = document.elementFromPoint(event.clientX, event.clientY)
+    if (!drag.moved) resolveMapSelection(getMapSelectionFromTarget(releaseSelection) ?? drag.selection)
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId)
     }
     window.setTimeout(() => {
       drag.moved = false
+      drag.selection = null
     })
   }
 
   function zoomMapWithWheel(event: ReactWheelEvent<SVGSVGElement>) {
     event.preventDefault()
     zoomMap(event.deltaY > 0 ? -1 : 1)
+  }
+
+  function getMapSelectionFromTarget(targetElement: EventTarget | null): MapSelection {
+    if (!(targetElement instanceof Element)) return null
+
+    const country = targetElement.closest<SVGElement>('.country-shape[data-iso], .country-hit-area[data-iso]')
+    if (country?.dataset.iso) return { id: country.dataset.iso, mode: 'countries' }
+
+    const feature = targetElement.closest<SVGElement>('[data-feature-id]')
+    const featureId = feature?.dataset.featureId
+    return featureId ? { id: featureId, mode: activeGameMode } : null
+  }
+
+  function resolveMapSelection(selection: MapSelection) {
+    if (!selection || isLearning || phase !== 'playing' || result || selection.mode !== activeGameMode) return
+    resolveRound(selection.id)
   }
 
   function nextLearningCountry() {
@@ -1225,6 +1267,22 @@ function App() {
               <rect className="map-grid" width={WIDTH} height={HEIGHT} />
               <path className="sphere-outline" d={PATH({ type: 'Sphere' }) ?? undefined} />
 
+              {activeGameMode === 'countries' && !isLearning && (
+                <g className="country-hit-layer" aria-hidden="true">
+                  {WORLD_FEATURES.map((country, index) => (
+                    <path
+                      key={`hit-${country.mapId ?? country.properties?.name ?? 'country'}-${index}`}
+                      data-iso={country.mapId ?? undefined}
+                      className="country-hit-area"
+                      d={PATH(country) ?? undefined}
+                      onPointerEnter={(event) => showMapTooltip(event, getMapCountryLabel(country))}
+                      onPointerMove={(event) => showMapTooltip(event, getMapCountryLabel(country))}
+                      onPointerLeave={() => setMapTooltip(null)}
+                    />
+                  ))}
+                </g>
+              )}
+
               <g className="country-layer">
                 {WORLD_FEATURES.map((country, index) => (
                   <path
@@ -1235,7 +1293,6 @@ function App() {
                     onPointerEnter={(event) => showMapTooltip(event, getMapCountryLabel(country))}
                     onPointerMove={(event) => showMapTooltip(event, getMapCountryLabel(country))}
                     onPointerLeave={() => setMapTooltip(null)}
-                    onClick={() => !mapDragRef.current.moved && activeGameMode === 'countries' && !isLearning && phase === 'playing' && !result && country.mapId && resolveRound(country.mapId)}
                   >
                     <title>{getMapCountryLabel(country)}</title>
                   </path>
@@ -1267,7 +1324,6 @@ function App() {
                               cy={projected.cy}
                               rx={projected.rx}
                               ry={projected.ry}
-                              onClick={() => !mapDragRef.current.moved && phase === 'playing' && !result && resolveRound(feature.id)}
                             >
                               <title>{phase === 'playing' && !result ? t[modeMeta.selectTitleKey] : getWaterFeatureDisplayName(feature, language)}</title>
                             </ellipse>
@@ -1285,7 +1341,6 @@ function App() {
                               data-feature-id={feature.id}
                               points={points}
                               style={{ '--feature-line-width': feature.lineWidth ?? 9 } as CssVars}
-                              onClick={() => !mapDragRef.current.moved && phase === 'playing' && !result && resolveRound(feature.id)}
                             >
                               <title>{phase === 'playing' && !result ? t[modeMeta.selectTitleKey] : getWaterFeatureDisplayName(feature, language)}</title>
                             </polyline>
